@@ -110,6 +110,7 @@ const initialFormData = {
   supplyStartDate: undefined as Date | undefined,
   address: "",
   avatar: "",
+  status: 'Active' as 'Active' | 'Inactive',
   bankDetails: [] as Array<{
     accountNumber?: string;
     accountHolderName?: string;
@@ -750,15 +751,18 @@ const SuppliersManagement: React.FC = () => {
         const materialsData = await materialsResponse.json();
         console.log("Fetched materials data:", materialsData);
 
-        // Group materials by projectId
+        // Group materials by projectId and keep _id and date for stable keys and display
         const groupedMaterials = materialsData.reduce((acc: any, material: any) => {
           if (!acc[material.projectId]) {
             acc[material.projectId] = [];
           }
           acc[material.projectId].push({
+            _id: material._id,
+            projectId: material.projectId,
             materialType: material.materialType,
             quantity: Number(material.quantity) || 0,
-            amount: Number(material.amount) || 0
+            amount: Number(material.amount) || 0,
+            date: material.date
           });
           return acc;
         }, {});
@@ -898,8 +902,8 @@ const SuppliersManagement: React.FC = () => {
               <div className="mb-4">
                 <p className="text-sm font-medium mb-2">Materials:</p>
                 <div className="flex flex-wrap gap-1">
-                  {supplier.materialTypes.slice(0, 3).map((material, index) => (
-                    <Badge key={index} variant="outline" className="text-xs">
+                  {supplier.materialTypes.slice(0, 3).map((material) => (
+                    <Badge key={material} variant="outline" className="text-xs">
                       {material}
                     </Badge>
                   ))}
@@ -1916,7 +1920,7 @@ const SuppliersManagement: React.FC = () => {
                                         variant="ghost"
                                         size="icon"
                                         className="text-red-600 hover:bg-red-50"
-                                        onClick={() => material._id && removeMaterialFromProject(projectId, material._id)}
+                                        onClick={() => removeMaterialFromProject(projectId, material.materialType)}
                                       >
                                         <Trash2 className="w-4 h-4" />
                                       </Button>
