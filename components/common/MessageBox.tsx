@@ -169,7 +169,7 @@ const MessageBox: React.FC<MessageBoxProps> = ({ userType, title, onBack, classN
     }
   }
 
-  const uploadFile = async (file: File): Promise<{ fileName: string; fileSize: number; fileType: string; fileUrl: string } | null> => {
+  const uploadFile = async (file: File): Promise<{ fileName: string; fileSize: number; fileType: string; fileUrl: string } | undefined> => {
     try {
       const formData = new FormData()
       formData.append("file", file)
@@ -195,7 +195,7 @@ const MessageBox: React.FC<MessageBoxProps> = ({ userType, title, onBack, classN
       }
     } catch (error) {
       console.error("File upload error:", error)
-      return null
+      return undefined
     }
   }
 
@@ -204,7 +204,7 @@ const MessageBox: React.FC<MessageBoxProps> = ({ userType, title, onBack, classN
     if ((!message.trim() && !selectedFile) || isSending) return
     if (!conversationId) return
 
-    let attachment = null
+    let attachment: Message['attachment'] | undefined = undefined
     if (selectedFile) {
       attachment = await uploadFile(selectedFile)
       if (!attachment) {
