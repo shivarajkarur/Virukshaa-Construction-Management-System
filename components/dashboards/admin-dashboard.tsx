@@ -70,7 +70,6 @@ interface DashboardData {
   totalClients: number
   totalSupervisors: number
   totalEmployees: number
-  totalMaterials: number
   totalPayroll: number
   totalReports: number
   payrollData: Payroll[]
@@ -126,17 +125,6 @@ interface DashboardData {
     experience: string
     projects: Array<any>
   }>
-  materialsData: Array<{
-    id: string
-    name: string
-    category: string
-    quantity: number
-    unit: string
-    price: number
-    supplier: string
-    status: string
-    lastUpdated: string
-  }>
   reportsData: Array<{
     id: string
     title: string
@@ -150,7 +138,6 @@ interface ApiData {
   clients: ApiResponse<Client[]>
   supervisors: ApiResponse<any[]>
   employees: ApiResponse<any[]>
-  materials: ApiResponse<any[]>
   reports: ApiResponse<any[]>
   payroll: ApiResponse<Payroll[]>
   message: ApiResponse<any[]>
@@ -162,14 +149,12 @@ export default function AdminDashboard() {
     totalClients: 0,
     totalSupervisors: 0,
     totalEmployees: 0,
-    totalMaterials: 0,
     totalPayroll: 0,
     totalReports: 0,
     recentProjects: [],
     clientsData: [],
     employeesData: [],
     supervisorsData: [],
-    materialsData: [],
     payrollData: [],
     reportsData: [],
   })
@@ -181,7 +166,7 @@ export default function AdminDashboard() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [selectedUser, setSelectedUser] = useState<any>(null)
   const [selectedUserType, setSelectedUserType] = useState<
-    "supervisor" | "employee" | "client" | "material"
+    "supervisor" | "employee" | "client"
   >("supervisor")
 
   // Enhanced fetch function with better payroll user resolution
@@ -196,7 +181,6 @@ export default function AdminDashboard() {
         { name: "clients", url: `${baseUrl}/api/clients` },
         { name: "supervisors", url: `${baseUrl}/api/supervisors` },
         { name: "employees", url: `${baseUrl}/api/employees` },
-        { name: "materials", url: `${baseUrl}/api/materials` },
         { name: "payroll", url: `${baseUrl}/api/payroll` },
         { name: "reports", url: `${baseUrl}/api/reports` },
       ]
@@ -361,7 +345,6 @@ export default function AdminDashboard() {
         totalClients: Array.isArray(data.clients?.data) ? data.clients.data.length : 0,
         totalSupervisors: Array.isArray(data.supervisors?.data) ? data.supervisors.data.length : 0,
         totalEmployees: Array.isArray(data.employees?.data) ? data.employees.data.length : 0,
-        totalMaterials: Array.isArray(data.materials?.data) ? data.materials.data.length : 0,
         totalPayroll: payrollData
           .filter((item: any) => item.status === "paid")
           .reduce((sum: number, item: any) => sum + (isNaN(item.amount) ? 0 : item.amount), 0),
@@ -430,19 +413,6 @@ export default function AdminDashboard() {
             projects: supervisor.projects || [],
           }))
           : [],
-        materialsData: Array.isArray(data.materials?.data)
-          ? data.materials.data.map((material: any) => ({
-            id: material._id || material.id || Math.random().toString(),
-            name: material.name || "Unnamed Material",
-            category: material.category || "Unknown Category",
-            quantity: material.quantity || 0,
-            unit: material.unit || "pcs",
-            price: material.price || 0,
-            supplier: material.supplier || "Unknown Supplier",
-            status: material.status || "Available",
-            lastUpdated: material.lastUpdated || new Date().toISOString(),
-          }))
-          : [],
         reportsData: Array.isArray(data.reports?.data)
           ? data.reports.data.map((r: any) => ({
             id: r._id || r.id || Math.random().toString(),
@@ -476,7 +446,7 @@ export default function AdminDashboard() {
     fetchDashboardData()
   }, [])
 
-  const handleViewDetails = (user: any, type: "supervisor" | "employee" | "client" | "material") => {
+  const handleViewDetails = (user: any, type: "supervisor" | "employee" | "client") => {
     setSelectedUser(user)
     setSelectedUserType(type)
     setIsModalOpen(true)
@@ -492,9 +462,6 @@ export default function AdminDashboard() {
         break
       case "clients":
         setActiveSection("clients")
-        break
-      case "materials":
-        setActiveSection("materials")
         break
       case "message":
         setActiveSection("message")
@@ -579,14 +546,6 @@ export default function AdminDashboard() {
       icon: Users,
       color: "text-purple-600",
       bgColor: "bg-purple-50",
-    },
-    {
-      id: "materials",
-      title: "Materials",
-      value: dashboardData?.totalMaterials.toString() || "0",
-      icon: Truck,
-      color: "text-orange-600",
-      bgColor: "bg-orange-50",
     },
     {
       id: "reports",
@@ -769,60 +728,6 @@ export default function AdminDashboard() {
     }
 
     // Continue with other table types...
-    if (selectedStat === "materials" && dashboardData?.materialsData && dashboardData.materialsData.length > 0) {
-      return (
-        <div className="h-full overflow-y-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Quantity</TableHead>
-                <TableHead>Unit</TableHead>
-                <TableHead>Price</TableHead>
-                {/* <TableHead>Supplier</TableHead> */}
-                <TableHead>Status</TableHead>
-                <TableHead>Last Updated</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {dashboardData.materialsData.map((material) => (
-                <TableRow key={material.id}>
-                  <TableCell className="font-medium">{material.name}</TableCell>
-                  <TableCell>{material.category || "-"}</TableCell>
-                  <TableCell>{material.quantity}</TableCell>
-                  <TableCell>{material.unit}</TableCell>
-                  <TableCell>₹{material.price.toFixed(2)}</TableCell>
-                  {/* <TableCell>{material.supplier || "-"}</TableCell> */}
-                  <TableCell>
-                    <Badge
-                      variant={
-                        material.status === "Available"
-                          ? "default"
-                          : material.status === "Low Stock"
-                            ? "destructive"
-                            : "secondary"
-                      }
-                    >
-                      {material.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{new Date(material.lastUpdated).toLocaleDateString()}</TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      <Button variant="outline" size="sm" onClick={() => handleViewDetails(material, "material")}>
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )
-    }
 
     if (selectedStat === "employees" && dashboardData?.employeesData && dashboardData.employeesData.length > 0) {
       return (
@@ -996,12 +901,6 @@ export default function AdminDashboard() {
         color: "#8B5CF6", // Purple
         percentage: 0,
       },
-      {
-        name: "Materials",
-        value: dashboardData?.totalMaterials || 0,
-        color: "#F59E0B", // Orange
-        percentage: 0,
-      },
     ]
 
     const totalItems = chartData.reduce((sum, item) => sum + item.value, 0)
@@ -1033,20 +932,17 @@ export default function AdminDashboard() {
       const currentEmployees = dashboardData?.totalEmployees || 0;
       const currentSupervisors = dashboardData?.totalSupervisors || 0;
       const currentClients = dashboardData?.totalClients || 0;
-      const currentMaterials = dashboardData?.totalMaterials || 0;
       
       // Ensure we have at least some data points
       const minEmployees = Math.min(1, Math.floor(currentEmployees * 0.1));
       const minSupervisors = Math.min(1, Math.floor(currentSupervisors * 0.1));
       const minClients = Math.min(1, Math.floor(currentClients * 0.1));
-      const minMaterials = Math.min(10, Math.floor(currentMaterials * 0.1));
       
       return {
         month: monthName,
         employees: Math.max(minEmployees, calculateHistoricalValue(currentEmployees)),
         supervisors: Math.max(minSupervisors, calculateHistoricalValue(currentSupervisors)),
         clients: Math.max(minClients, calculateHistoricalValue(currentClients)),
-        materials: Math.max(minMaterials, calculateHistoricalValue(currentMaterials)),
       };
     });
 
@@ -1070,7 +966,6 @@ export default function AdminDashboard() {
                     supervisors: { label: "Supervisors", color: "#10B981" },
                     employees: { label: "Employees", color: "#3B82F6" },
                     clients: { label: "Clients", color: "#8B5CF6" },
-                    materials: { label: "Materials", color: "#F59E0B" },
                   }}
                 >
                   <RechartsPrimitive.PieChart>
@@ -1148,7 +1043,6 @@ export default function AdminDashboard() {
                     employees: { label: "Employees", color: "#3B82F6" },
                     supervisors: { label: "Supervisors", color: "#10B981" },
                     clients: { label: "Clients", color: "#8B5CF6" },
-                    materials: { label: "Materials", color: "#F59E0B" },
                   }}
                 >
                   <RechartsPrimitive.LineChart data={monthlyData}>
@@ -1264,7 +1158,7 @@ export default function AdminDashboard() {
             )}
 
             {/* Enhanced Stats Grid */}
-            <div className="order-1 md:order-none grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-5 gap-4 w-full">
+            <div className="order-1 md:order-none grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
               {stats.map((stat) => (
                 <Card
                   key={stat.id}
