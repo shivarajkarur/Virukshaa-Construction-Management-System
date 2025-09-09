@@ -30,7 +30,7 @@ export default function ConsoleErrorSuppressor() {
     }
 
     return () => {
-      console.error = originalError
+      
     }
   }, [])
 

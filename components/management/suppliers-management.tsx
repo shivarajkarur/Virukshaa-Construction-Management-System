@@ -172,14 +172,10 @@ const SuppliersManagement: React.FC = () => {
 
   useEffect(() => {
     fetchSuppliers()
-    fetchProjects()
   }, [])
 
-  useEffect(() => {
-    if (selectedSupplier?._id) {
-      fetchSupplierMaterials(selectedSupplier._id)
-    }
-  }, [selectedSupplier?._id])
+  // Removed redundant auto-fetch of materials on selectedSupplier change to avoid duplicate requests.
+  // Materials are fetched within fetchSupplierTransactions when opening the detail view.
 
   const fetchSupplierMaterials = async (supplierId: string) => {
     try {
@@ -283,6 +279,7 @@ const SuppliersManagement: React.FC = () => {
       supplyStartDate: supplier.supplyStartDate ? new Date(supplier.supplyStartDate) : undefined,
       address: supplier.address,
       avatar: supplier.avatar || "",
+      status: 'Active',
       bankDetails: supplier.bankDetails ? [...supplier.bankDetails] : [],
     })
     setEditingSupplier(supplier)
@@ -342,9 +339,6 @@ const SuppliersManagement: React.FC = () => {
         ...(formData.avatar && { avatar: formData.avatar }),
         ...(formData.bankDetails?.length && { bankDetails: formData.bankDetails }),
       }
-
-      console.log('Sending request:', { method, url, body: requestBody })
-
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -354,7 +348,7 @@ const SuppliersManagement: React.FC = () => {
       const responseData = await response.json()
 
       if (!response.ok) {
-        console.error('Server response:', responseData)
+        // console.error('Server response:', responseData)
         throw new Error(responseData.error || 'Failed to save supplier')
       }
 
@@ -373,7 +367,6 @@ const SuppliersManagement: React.FC = () => {
       setEditingSupplier(null)
       resetForm()
     } catch (error: any) {
-      console.error("Error saving supplier:", error)
       toast.error(error.message || "Failed to save supplier. Please check the console for details.")
     } finally {
       setLoading(false)
@@ -390,7 +383,6 @@ const SuppliersManagement: React.FC = () => {
         throw new Error("Failed to delete supplier")
       }
     } catch (error) {
-      console.error("Error deleting supplier:", error)
       toast.error("Failed to delete supplier. Please try again.")
     }
   }
@@ -501,9 +493,6 @@ const SuppliersManagement: React.FC = () => {
       createdAt: timestamp,
       updatedAt: timestamp
     };
-
-    console.log("Creating new material entry:", newMaterial);
-
     // Prepare the material data for the server (without temporary fields)
     const { _id, ...materialForServer } = newMaterial;
 
@@ -554,7 +543,6 @@ const SuppliersManagement: React.FC = () => {
       }
 
       const result = await response.json();
-      console.log('Server response for new material:', result);
 
       // 4. Update local state with server-generated ID
       setProjectMaterials(prev => ({
@@ -738,18 +726,22 @@ const SuppliersManagement: React.FC = () => {
   const fetchSupplierTransactions = async (supplierId: string) => {
     setIsLoadingTransactions(true);
     try {
-      // Fetch projects when opening the detail view
-      await fetchProjects();
+      // Fetch projects and materials in parallel for faster load.
+      // Only fetch projects if not already loaded.
+      const projectsPromise = projects.length === 0 ? fetchProjects() : Promise.resolve();
 
       // Reset project materials for this supplier
       setProjectMaterials({});
       setProjectMaterialInputs({});
 
-      // Fetch project materials for this supplier
-      const materialsResponse = await fetch(`/api/suppliers/${supplierId}/materials`);
+      // Start materials fetch
+      const materialsFetch = fetch(`/api/suppliers/${supplierId}/materials`);
+
+      // Await both
+      const [_, materialsResponse] = await Promise.all([projectsPromise, materialsFetch]);
       if (materialsResponse.ok) {
         const materialsData = await materialsResponse.json();
-        console.log("Fetched materials data:", materialsData);
+        // console.log("Fetched materials data:", materialsData);
 
         // Group materials by projectId and keep _id and date for stable keys and display
         const groupedMaterials = materialsData.reduce((acc: any, material: any) => {
@@ -767,7 +759,6 @@ const SuppliersManagement: React.FC = () => {
           return acc;
         }, {});
 
-        console.log("Grouped materials:", groupedMaterials);
         setProjectMaterials(groupedMaterials);
 
         // Initialize input states for existing projects
@@ -1896,9 +1887,9 @@ const SuppliersManagement: React.FC = () => {
 
                               {/* Material List */}
                               <div className="space-y-2">
-                                {(materials || []).map((material) => (
+                                {(materials || []).map((material, idx) => (
                                   <div
-                                    key={material._id}
+                                    key={material._id || `${projectId}-${material.materialType}-${material.date || ''}-${idx}`}
                                     className="flex flex-wrap sm:flex-nowrap justify-between items-center bg-white p-3 rounded border"
                                   >
                                     <div className="flex items-center gap-2 mb-2 sm:mb-0">
