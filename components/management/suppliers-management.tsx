@@ -218,35 +218,9 @@ const SuppliersManagement: React.FC = () => {
       const response = await fetch("/api/suppliers", { cache: "no-store" })
       if (!response.ok) throw new Error("Failed to fetch suppliers")
       const data = await response.json()
-      // Convert projectMaterials array to our state format
-      const formattedData = data.map((supplier: any) => {
-        const projectMaterialsObj: Record<string, ProjectMaterialLocal[]> = {}
-        if (supplier.projectMaterials && Array.isArray(supplier.projectMaterials)) {
-          supplier.projectMaterials.forEach((pm: any) => {
-            if (!projectMaterialsObj[pm.projectId]) {
-              projectMaterialsObj[pm.projectId] = []
-            }
-            projectMaterialsObj[pm.projectId].push({
-              materialType: pm.materialType,
-              quantity: Number(pm.quantity) || 0,
-              amount: Number(pm.amount) || 0,
-              projectId: pm.projectId,
-              date: pm.date
-            })
-          })
-        }
-        // Ensure assigned projects render even without materials
-        if (Array.isArray(supplier.assignedProjects)) {
-          for (const pid of supplier.assignedProjects) {
-            if (!projectMaterialsObj[pid]) projectMaterialsObj[pid] = []
-          }
-        }
-        return {
-          ...supplier,
-          projectMaterials: projectMaterialsObj
-        }
-      })
-      setSuppliers(formattedData)
+      // Keep supplier.projectMaterials as an ARRAY from the backend to avoid type mismatches.
+      // The grouped-by-project view is handled by `projectMaterials` state when a supplier is selected.
+      setSuppliers(data)
     } catch (error) {
       console.error("Error fetching suppliers:", error)
       toast.error("Failed to load suppliers. Please try again.")
@@ -739,12 +713,14 @@ const SuppliersManagement: React.FC = () => {
 
       // Update the projectMaterials in the selectedSupplier state
       if (selectedSupplier) {
-        const updatedProjectMaterials = { ...selectedSupplier.projectMaterials } as any;
-        delete updatedProjectMaterials[projectId];
+        // Ensure projectMaterials remains an array; filter out any materials that belong to this project
+        const updatedProjectMaterialsArray = Array.isArray(selectedSupplier.projectMaterials)
+          ? selectedSupplier.projectMaterials.filter(pm => pm.projectId !== projectId)
+          : [];
 
         setSelectedSupplier({
           ...selectedSupplier,
-          projectMaterials: updatedProjectMaterials,
+          projectMaterials: updatedProjectMaterialsArray,
           assignedProjects: (selectedSupplier.assignedProjects || []).filter(p => p !== projectId)
         });
       }

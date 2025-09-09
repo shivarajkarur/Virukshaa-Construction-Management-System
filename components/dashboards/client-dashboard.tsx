@@ -447,7 +447,7 @@ export default function ClientDashboard() {
         return (
           <ClientMessageBox
             title={client?.name ? `${client.name}` : 'Virukshaa'}
-            conversationId={convId}
+            conversationId={convId}  
           />
         )
       }
