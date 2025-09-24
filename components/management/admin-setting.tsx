@@ -321,10 +321,10 @@ const SettingsContent = () => {
             </div>
 
             {/* Profile Card */}
-            <div className="rounded-xl border border-emerald-100 bg-white/70 backdrop-blur-sm shadow-sm overflow-hidden">
+            <div className="rounded-xl bg-white/70 backdrop-blur-sm overflow-hidden">
               {/* Card Body */}
               <div className="divide-y divide-gray-100">
-                <div className="px-5 sm:px-6 py-8 sm:py-6 flex flex-col sm:flex-row items-start space-y-6 sm:space-y-0 sm:space-x-8">
+                <div className=" py-8 sm:py-6 flex flex-col sm:flex-row items-start space-y-6 sm:space-y-0 sm:space-x-8">
                    {/* Profile Photo - Left Side */}
                    <div className="flex-shrink-0 w-full sm:w-1/3">
                      {formData.profileImage ? (
@@ -338,7 +338,7 @@ const SettingsContent = () => {
                            <img
                              src={formData.profileImage}
                              alt="Profile"
-                             className="w-full h-[300px] sm:h-[500px] object-cover"
+                             className="w-full h-[300px] sm:h-[500px] object-contain"
                            />
                          </div>
                        </a>
