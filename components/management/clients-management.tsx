@@ -62,7 +62,7 @@ import {
 } from "lucide-react"
 import MessageBox from "@/components/common/MessageBox"
 
-interface Client { 
+interface Client {
   _id: string
   name: string
   username: string
@@ -151,8 +151,6 @@ interface MessageDialogProps {
   client: Client | null
   onSend: (message: string, clientId: string) => void
 }
-
-
 
 const initialFormData: FormData = {
   name: "",
@@ -640,8 +638,8 @@ export default function ClientsManagement() {
     }
 
     // Phone number validation (basic international format)
-    const phoneRegex = /^[+]?[\s\-\(\)0-9]*$/
-    if (!phoneRegex.test(formData.phone) || formData.phone.replace(/[^0-9]/g, '').length < 8) {
+    const phoneRegex = /^[+]?[\s\-$$$$0-9]*$/
+    if (!phoneRegex.test(formData.phone) || formData.phone.replace(/[^0-9]/g, "").length < 8) {
       toast.error("Please enter a valid phone number")
       return
     }
@@ -658,7 +656,7 @@ export default function ClientsManagement() {
       return
     }
 
-    // Password validation for new clients or when changing password
+    // Password validation for new clients
     if (!editingClient) {
       if (!formData.password) {
         toast.error("Password is required for new clients")
@@ -680,6 +678,25 @@ export default function ClientsManagement() {
       const hasLowerCase = /[a-z]/.test(formData.password)
       const hasNumbers = /\d/.test(formData.password)
 
+      if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
+        toast.info("For better security, use uppercase, lowercase, and numbers")
+      }
+    }
+    // If editing and a new password is provided, validate it
+    if (editingClient && formData.password) {
+      if (formData.password !== formData.confirmPassword) {
+        toast.error("Passwords do not match. Please check and try again")
+        return
+      }
+
+      if (formData.password.length < 6) {
+        toast.warning("Password must be at least 6 characters long")
+        return
+      }
+
+      const hasUpperCase = /[A-Z]/.test(formData.password)
+      const hasLowerCase = /[a-z]/.test(formData.password)
+      const hasNumbers = /\d/.test(formData.password)
       if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
         toast.info("For better security, use uppercase, lowercase, and numbers")
       }
@@ -763,37 +780,37 @@ export default function ClientsManagement() {
       if (!file) return
 
       // Validate file type
-      if (!file.type.startsWith('image/')) {
-        toast.error('Please upload an image file')
+      if (!file.type.startsWith("image/")) {
+        toast.error("Please upload an image file")
         return
       }
 
       // Validate file size (5MB)
       if (file.size > 5 * 1024 * 1024) {
-        toast.error('File size must be less than 5MB')
+        toast.error("File size must be less than 5MB")
         return
       }
 
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append("file", file)
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
+      const response = await fetch("/api/upload", {
+        method: "POST",
         body: formData,
       })
 
       if (!response.ok) {
-        throw new Error('Failed to upload image')
+        throw new Error("Failed to upload image")
       }
 
       const { fileUrl } = await response.json()
       // Use functional update to avoid state update during render
-      setFormData(prev => ({ ...prev, avatar: fileUrl }))
+      setFormData((prev) => ({ ...prev, avatar: fileUrl }))
 
-      toast.success('Profile photo uploaded successfully')
+      toast.success("Profile photo uploaded successfully")
     } catch (error) {
-      console.error('Error uploading avatar:', error)
-      toast.error('Failed to upload profile photo')
+      console.error("Error uploading avatar:", error)
+      toast.error("Failed to upload profile photo")
     }
   }
 
@@ -831,7 +848,7 @@ export default function ClientsManagement() {
   }
 
   const openEditDialog = (client: Client) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       name: client.name,
       username: client.username,
@@ -1375,7 +1392,6 @@ export default function ClientsManagement() {
                       inputMode="text"
                       autoComplete="username"
                       required
-                      disabled={!!editingClient}
                     />
                   </div>
                 </div>
@@ -1409,42 +1425,42 @@ export default function ClientsManagement() {
                     />
                   </div>
                 </div>
-                {!editingClient && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="password">Password *</Label>
-                      <Input
-                        id="password"
-                        type="password"
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        placeholder="Enter password"
-                        required
-                        autoComplete="new-password"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        inputMode="text"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="confirmPassword">Confirm Password *</Label>
-                      <Input
-                        id="confirmPassword"
-                        type="password"
-                        value={formData.confirmPassword}
-                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                        placeholder="Confirm password"
-                        required
-                        autoComplete="new-password"
-                        autoCapitalize="none"
-                        autoCorrect="off"
-                        spellCheck={false}
-                        inputMode="text"
-                      />
-                    </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password {!editingClient ? "*" : ""}</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      placeholder={
+                        editingClient ? "Enter new password (leave blank to keep current)" : "Enter password"
+                      }
+                      required={!editingClient}
+                      autoComplete="new-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      inputMode="text"
+                    />
                   </div>
-                )}
+                  <div className="space-y-2">
+                    <Label htmlFor="confirmPassword">Confirm Password {!editingClient ? "*" : ""}</Label>
+                    <Input
+                      id="confirmPassword"
+                      type="password"
+                      value={formData.confirmPassword}
+                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                      placeholder={editingClient ? "Confirm new password (if changed)" : "Confirm password"}
+                      required={!editingClient}
+                      autoComplete="new-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      inputMode="text"
+                    />
+                  </div>
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="company">Company</Label>
                   <Input
@@ -1547,7 +1563,7 @@ export default function ClientsManagement() {
                   <div className="flex items-center gap-4">
                     {formData.avatar ? (
                       <img
-                        src={formData.avatar}
+                        src={formData.avatar || "/placeholder.svg"}
                         alt="Profile preview"
                         className="w-16 h-16 rounded-full object-cover border"
                       />
@@ -1862,9 +1878,7 @@ export default function ClientsManagement() {
                     min="0"
                     step="0.01"
                     value={invoiceFormData.amount}
-                    onChange={(e) =>
-                      setInvoiceFormData({ ...invoiceFormData, amount: Number(e.target.value) || 0 })
-                    }
+                    onChange={(e) => setInvoiceFormData({ ...invoiceFormData, amount: Number(e.target.value) || 0 })}
                     placeholder="0.00"
                     required
                   />
@@ -1964,7 +1978,6 @@ export default function ClientsManagement() {
                     <TabsTrigger value="projects">Sites</TabsTrigger>
                     <TabsTrigger value="invoices">Invoices</TabsTrigger>
                   </TabsList>
-
 
                   <TabsContent value="overview" className="mt-6 space-y-6 max-h-[70vh] overflow-y-auto pr-2">
                     {/* Quick Stats */}

@@ -63,23 +63,23 @@ import {
   CalendarDays,
   IndianRupee,
 } from "lucide-react"
-  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-  
-  interface Employee {
-    _id: string
-    name: string
-    email?: string
-    phone: string
-    role: string
-    salary: number
-    workType: "Daily" | "Monthly" | "Contract"
-    status: "Active" | "On Leave" | "Inactive"
-    joinDate: string
-    endDate?: string
-    address: string
-    avatar?: string
-    department?: string
- 
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+interface Employee {
+  _id: string
+  name: string
+  email?: string
+  phone: string
+  role: string
+  salary: number
+  workType: "Daily" | "Monthly" | "Contract"
+  status: "Active" | "On Leave" | "Inactive"
+  joinDate: string
+  endDate?: string
+  address: string
+  avatar?: string
+  department?: string
+
   supervisor?: string
   skills?: string[]
   createdAt: string
@@ -291,7 +291,7 @@ export default function EmployeesManagement() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     // Required field validations
     if (!formData.name?.trim()) {
       toast.error("Name is required")
@@ -343,7 +343,7 @@ export default function EmployeesManagement() {
       } else {
         let errorMessage = `Failed to ${editingEmployee ? 'update' : 'create'} employee`
         let details: any = null
-        
+
         try {
           details = await response.json()
           if (details?.message) {
@@ -354,17 +354,17 @@ export default function EmployeesManagement() {
         } catch (e) {
           errorMessage += ` (HTTP ${response.status})`
         }
-        
+
         toast.error(errorMessage, {
           duration: 5000,
           action: {
             label: 'Dismiss',
-            onClick: () => {}
+            onClick: () => { }
           }
         })
-        
-        console.error('Employee save failed:', { 
-          status: response.status, 
+
+        console.error('Employee save failed:', {
+          status: response.status,
           details,
           formData: { ...formData, password: '*****' } // Don't log actual password
         })
@@ -868,19 +868,21 @@ export default function EmployeesManagement() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="role">Role *</Label>
-                  <select
+                  <Input
                     id="role"
+                    list="role-options"
                     value={formData.role}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full p-2 border rounded-md"
+                    placeholder="Select or type a role"
                     required
-                  >
+                  />
+                  <datalist id="role-options">
                     {roles.map((role) => (
                       <option key={role} value={role}>
                         {role}
                       </option>
                     ))}
-                  </select>
+                  </datalist>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1105,7 +1107,7 @@ export default function EmployeesManagement() {
                 <TabsContent value="overview" className="flex-1 overflow-y-auto pr-2 space-y-6">
                   {/* Quick Stats */}
                   <div className="grid grid-cols-1 gap-4">
-                   
+
                     <Card>
                       <CardContent className="p-4 space-y-1">
                         <div className="flex items-center gap-2">

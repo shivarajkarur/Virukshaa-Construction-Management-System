@@ -450,12 +450,12 @@ const SuppliersManagement: React.FC = () => {
   }
 
   // Update project material input
-  const updateProjectMaterialInput = (projectId: string, field: string, value: string | number) => {
+  const updateProjectMaterialInput = (projectId: string, field: string, value: string | number | Date) => {
     setProjectMaterialInputs(prev => ({
       ...prev,
       [projectId]: {
         ...prev[projectId],
-        [field]: field === 'materialType' ? value : Number(value)
+        [field]: field === 'quantity' || field === 'amount' ? Number(value) : value
       }
     }));
   }
@@ -481,6 +481,7 @@ const SuppliersManagement: React.FC = () => {
     // Generate a unique ID for the new material entry
     const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const timestamp = new Date().toISOString();
+    const selectedDate = (currentInput as any).date as string | undefined;
 
     // Create the new material entry with all required fields
     const newMaterial = {
@@ -489,7 +490,7 @@ const SuppliersManagement: React.FC = () => {
       materialType,
       quantity: Number(quantity),
       amount: Number(amount),
-      date: timestamp,
+      date: selectedDate || timestamp,
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -1801,7 +1802,7 @@ const SuppliersManagement: React.FC = () => {
                       {/* Site Cards */}
                       {Object.entries(projectMaterials).map(([projectId, materials]) => {
                         const project = projects.find((p) => p._id === projectId)
-                        const currentInput = projectMaterialInputs[projectId] || { materialType: "", quantity: 1, amount: 0 }
+                        const currentInput = projectMaterialInputs[projectId] || { materialType: "", quantity: 1, amount: 0, date: new Date().toISOString() }
                         if (!project) return null
 
                         return (
@@ -1868,6 +1869,31 @@ const SuppliersManagement: React.FC = () => {
                                       onChange={(e) => updateProjectMaterialInput(projectId, "amount", e.target.value)}
                                       className="pl-8 text-center h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
+                                  </div>
+                                  <div className="sm:col-span-3">
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <Button
+                                          variant="outline"
+                                          className={cn("w-full justify-start text-left font-normal h-9", !currentInput.date && "text-muted-foreground")}
+                                        >
+                                          <CalendarIcon className="mr-2 h-4 w-4" />
+                                          {currentInput.date ? (
+                                            format(new Date(currentInput.date), "dd MMM yyyy")
+                                          ) : (
+                                            <span>Pick date</span>
+                                          )}
+                                        </Button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-auto p-0" align="start">
+                                        <CalendarComponent
+                                          mode="single"
+                                          selected={currentInput.date ? new Date(currentInput.date) : undefined}
+                                          onSelect={(date) => updateProjectMaterialInput(projectId, "date", date ? date.toISOString() : "")}
+                                          initialFocus
+                                        />
+                                      </PopoverContent>
+                                    </Popover>
                                   </div>
                                   <Button
                                     onClick={() => addMaterialToProject(projectId)}
