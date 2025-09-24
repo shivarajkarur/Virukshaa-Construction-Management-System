@@ -58,28 +58,28 @@ import {
   Hash,
   Eye,
   MessageCircle,
-  Award,
   TrendingUp,
   FileText,
   CalendarDays,
   IndianRupee,
 } from "lucide-react"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-
-interface Employee {
-  _id: string
-  name: string
-  email: string
-  phone: string
-  role: string
-  salary: number
-  workType: "Daily" | "Monthly" | "Contract"
-  status: "Active" | "On Leave" | "Inactive"
-  joinDate: string
-  endDate?: string
-  address: string
-  avatar?: string
-  department?: string
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+  
+  interface Employee {
+    _id: string
+    name: string
+    email?: string
+    phone: string
+    role: string
+    salary: number
+    workType: "Daily" | "Monthly" | "Contract"
+    status: "Active" | "On Leave" | "Inactive"
+    joinDate: string
+    endDate?: string
+    address: string
+    avatar?: string
+    department?: string
+ 
   supervisor?: string
   skills?: string[]
   createdAt: string
@@ -298,18 +298,6 @@ export default function EmployeesManagement() {
       return
     }
 
-    if (!formData.email?.trim()) {
-      toast.error("Email is required")
-      return
-    }
-
-    // Email format validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(formData.email)) {
-      toast.error("Please enter a valid email address")
-      return
-    }
-
     if (!formData.phone?.trim()) {
       toast.error("Phone number is required")
       return
@@ -426,7 +414,7 @@ export default function EmployeesManagement() {
     setEditingEmployee(employee)
     setFormData({
       name: employee.name,
-      email: employee.email,
+      email: employee.email || "",
       phone: employee.phone,
       role: employee.role,
       salary: employee.salary,
@@ -443,7 +431,7 @@ export default function EmployeesManagement() {
     const term = searchTerm.toLowerCase()
     return (
       employee.name.toLowerCase().includes(term) ||
-      employee.email.toLowerCase().includes(term) ||
+      (employee.email || "").toLowerCase().includes(term) ||
       employee.role.toLowerCase().includes(term)
     )
   })

@@ -58,30 +58,22 @@ const employeeSchema = new Schema<IEmployee>({
   }
 }, { timestamps: true });
 
-// Create the model or retrieve it if it already exists to prevent OverwriteModelError
-let Employee: mongoose.Model<IEmployee> | null = null;
+// Create or retrieve the model to prevent OverwriteModelError.
+// Export as a non-null model type so downstream imports are correctly typed.
+const Employee = (mongoose.models.Employee as mongoose.Model<IEmployee>)
+  || mongoose.model<IEmployee>('Employee', employeeSchema);
 
+// Preserve legacy index cleanup (safe no-op if index doesn't exist)
 try {
-  // Try to get the existing model
-  Employee = mongoose.models.Employee as mongoose.Model<IEmployee>;
-  
-  // If model exists, check and drop the problematic index
-  if (Employee) {
-    Employee.collection.dropIndex('username_1').catch((err: any) => {
-      if (err && err.codeName !== 'NamespaceNotFound') {
-        console.log('Error dropping username index:', err);
-      } else {
-        console.log('Dropped username index successfully');
-      }
-    });
-  }
+  Employee.collection.dropIndex('username_1').catch((err: any) => {
+    if (err && err.codeName !== 'NamespaceNotFound') {
+      console.log('Error dropping username index:', err);
+    } else {
+      console.log('Dropped username index successfully');
+    }
+  });
 } catch (e) {
   console.log('Error checking for existing model:', e);
-}
-
-// Create the model if it doesn't exist
-if (!Employee) {
-  Employee = mongoose.model<IEmployee>('Employee', employeeSchema);
 }
 
 export default Employee;
