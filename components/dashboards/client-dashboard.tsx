@@ -594,9 +594,9 @@ export default function ClientDashboard() {
                       <Button variant="default" onClick={() => setActiveSection('message')}>
                         Open Messages
                       </Button>
-                      <Button variant="outline" onClick={() => setActiveSection('feedback')}>
+                      {/* <Button variant="outline" onClick={() => setActiveSection('feedback')}>
                         Send Feedback
-                      </Button>
+                      </Button> */}
                     </div>
                   </CardContent>
                 </Card>

@@ -617,7 +617,7 @@ export default function ClientsManagement() {
 
     // Username format validation (alphanumeric and minimum 4 characters)
     const usernameRegex = /^[a-zA-Z0-9]{4,}$/
-    if (!usernameRegex.test(formData.username)) {
+    if (!usernameRegex.test(formData.username.trim())) {
       toast.error("Username must be at least 4 characters long and contain only letters and numbers")
       return
     }
@@ -629,7 +629,7 @@ export default function ClientsManagement() {
 
     // Email format validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(formData.email)) {
+    if (!emailRegex.test(formData.email.trim().toLowerCase())) {
       toast.error("Please enter a valid email address")
       return
     }
@@ -690,9 +690,24 @@ export default function ClientsManagement() {
     const loadingToast = toast.loading(`${editingClient ? "Updating" : "Adding"} client...`)
 
     try {
+      // Sanitize and normalize input (helps avoid mobile auto-capitalization/correction issues)
       const clientData = {
-        ...formData,
+        name: formData.name.trim(),
+        username: formData.username.trim().toLowerCase(),
+        email: formData.email.trim().toLowerCase(),
+        phone: formData.phone.trim(),
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+        company: (formData.company || "").trim(),
+        address: formData.address.trim(),
+        city: formData.city.trim(),
+        state: formData.state.trim(),
+        postalCode: formData.postalCode.trim(),
         projectTotalAmount: Number.parseFloat(formData.projectTotalAmount) || 0,
+        taxId: (formData.taxId || "").trim(),
+        website: (formData.website || "").trim(),
+        status: formData.status,
+        avatar: formData.avatar,
       }
 
       // Always remove confirmPassword as it's not needed on the server
@@ -1343,6 +1358,7 @@ export default function ClientsManagement() {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="Enter full name"
+                      autoComplete="name"
                       required
                     />
                   </div>
@@ -1353,6 +1369,11 @@ export default function ClientsManagement() {
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                       placeholder="Choose a username"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      inputMode="text"
+                      autoComplete="username"
                       required
                       disabled={!!editingClient}
                     />
@@ -1367,6 +1388,11 @@ export default function ClientsManagement() {
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       placeholder="Enter email address"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      inputMode="email"
+                      autoComplete="email"
                       required
                     />
                   </div>
@@ -1377,6 +1403,8 @@ export default function ClientsManagement() {
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="Enter phone number"
+                      inputMode="tel"
+                      autoComplete="tel"
                       required
                     />
                   </div>
@@ -1393,6 +1421,10 @@ export default function ClientsManagement() {
                         placeholder="Enter password"
                         required
                         autoComplete="new-password"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        inputMode="text"
                       />
                     </div>
                     <div className="space-y-2">
@@ -1405,6 +1437,10 @@ export default function ClientsManagement() {
                         placeholder="Confirm password"
                         required
                         autoComplete="new-password"
+                        autoCapitalize="none"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        inputMode="text"
                       />
                     </div>
                   </div>
@@ -1416,6 +1452,7 @@ export default function ClientsManagement() {
                     value={formData.company}
                     onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                     placeholder="Enter company name"
+                    autoComplete="organization"
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1427,6 +1464,7 @@ export default function ClientsManagement() {
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                       placeholder="Enter street address"
                       rows={2}
+                      autoComplete="address-line1"
                       required
                     />
                   </div>
@@ -1437,6 +1475,7 @@ export default function ClientsManagement() {
                       value={formData.city}
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                       placeholder="Enter city"
+                      autoComplete="address-level2"
                       required
                     />
                   </div>
@@ -1449,6 +1488,7 @@ export default function ClientsManagement() {
                       value={formData.state}
                       onChange={(e) => setFormData({ ...formData, state: e.target.value })}
                       placeholder="State/Province"
+                      autoComplete="address-level1"
                       required
                     />
                   </div>
@@ -1460,6 +1500,9 @@ export default function ClientsManagement() {
                       type="number"
                       onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
                       placeholder="Postal Code"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      autoComplete="postal-code"
                       required
                     />
                   </div>
@@ -1471,6 +1514,7 @@ export default function ClientsManagement() {
                       value={formData.projectTotalAmount}
                       onChange={(e) => setFormData({ ...formData, projectTotalAmount: e.target.value })}
                       placeholder="Total Amount"
+                      inputMode="decimal"
                       required
                     />
                   </div>
@@ -1493,6 +1537,8 @@ export default function ClientsManagement() {
                       value={formData.website}
                       onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                       placeholder="https://example.com"
+                      inputMode="url"
+                      autoComplete="url"
                     />
                   </div>
                 </div>

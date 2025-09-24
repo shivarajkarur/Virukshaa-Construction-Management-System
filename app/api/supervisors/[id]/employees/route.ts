@@ -14,7 +14,7 @@ export async function GET(
     const supervisor = await Supervisor.findById(params.id)
       .populate({
         path: 'employees',
-        select: 'name email phone role workType status joinDate endDate address position avatar',
+        select: 'name email phone role workType status joinDate endDate address position avatar salary',
         options: { lean: true },
       })
       .select('employees')

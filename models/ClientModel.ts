@@ -51,7 +51,16 @@ const clientSchema = new Schema<IClient>(
     phone: {
       type: String,
       required: true,
-      match: [/^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/, 'Please enter a valid phone number']
+      validate: {
+        validator: function (v: string) {
+          // Allow international formats with spaces, dashes, parentheses, optional leading plus
+          // and ensure at least 8 digits overall
+          const basicFormatOk = /^[+]?[\s\-().0-9]*$/.test(v || '');
+          const digitCount = (v || '').replace(/[^0-9]/g, '').length;
+          return basicFormatOk && digitCount >= 8;
+        },
+        message: 'Please enter a valid phone number'
+      }
     },
     company: { type: String }, // optional
     address: { type: String, required: true },

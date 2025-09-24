@@ -161,7 +161,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ message: 'Phone already exists' }, { status: 409 });
     }
 
-    const client = new Client({
+    // Build payload without injecting empty strings for optional fields that have validators
+    const payload: any = {
       name,
       username,
       email,
@@ -173,14 +174,16 @@ export async function POST(request: Request) {
       state,
       postalCode,
       taxId: taxId || '',
-      website: website || '',
       projectTotalAmount: Number(projectTotalAmount) || 0,
       status: status || 'Active',
-      avatar: avatar || '',
       totalPaid: 0,
       dueAmount: Number(projectTotalAmount) || 0,
       lastPaymentDate: null
-    });
+    };
+    if (website) payload.website = website; // only set if truthy
+    if (avatar) payload.avatar = avatar;    // only set if truthy
+
+    const client = new Client(payload);
 
     try {
       await client.save();
@@ -197,7 +200,13 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(toClientResponse(client.toObject()), { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
+    // Surface validation errors clearly
+    if (error?.name === 'ValidationError') {
+      const firstKey = Object.keys(error.errors || {})[0];
+      const message = firstKey ? (error.errors[firstKey]?.message || 'Validation error') : 'Validation error';
+      return NextResponse.json({ message }, { status: 400 });
+    }
     console.error('Error creating client:', error);
     return NextResponse.json(
       { message: 'Failed to create client' },

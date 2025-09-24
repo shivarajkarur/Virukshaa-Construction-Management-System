@@ -6,7 +6,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Users, RefreshCw, Search, Mail, Phone, User, MapPin, Calendar, Briefcase, Clock } from "lucide-react"
+import { Users, RefreshCw, Search, Mail, Phone, User, MapPin, Calendar, Briefcase, Clock, IndianRupee } from "lucide-react"
 
 type SupervisorEmployeeItem = {
     _id: string
@@ -16,6 +16,7 @@ type SupervisorEmployeeItem = {
     role?: string
     position?: string
     avatar?: string
+    salary?: number
     workType?: string
     shiftsWorked?: number
     joinDate?: string
@@ -57,6 +58,7 @@ export default function SupervisorEmployee() {
                 role: e.role,
                 position: e.position,
                 avatar: e.avatar,
+                salary: e.salary,
                 workType: e.workType,
                 shiftsWorked: e.shiftsWorked,
                 joinDate: e.joinDate,
@@ -86,6 +88,19 @@ export default function SupervisorEmployee() {
             month: "short",
             day: "numeric",
         })
+    }
+
+    // INR currency formatter for salaries
+    const formatINR = (val?: number) =>
+        new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format((val ?? 0))
+
+    // Calculate today's pay for daily workers based on today's recorded shifts
+    const calcTodaysPay = (emp: SupervisorEmployeeItem) => {
+        const isDaily = emp.workType?.toLowerCase() === 'daily' || emp.workType?.toLowerCase() === 'shift'
+        if (!isDaily) return 0
+        const perShift = typeof emp.salary === 'number' ? emp.salary : 0
+        const shifts = typeof emp.shiftsWorked === 'number' ? emp.shiftsWorked : 0
+        return (shifts || 0) * (perShift || 0)
     }
 
     const filtered = useMemo(() => {
@@ -196,7 +211,7 @@ export default function SupervisorEmployee() {
                         <p className="text-xs text-muted-foreground">Currently working</p>
                     </CardContent>
                 </Card>
-
+                {/* 
                 <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Shift Workers</CardTitle>
@@ -208,9 +223,9 @@ export default function SupervisorEmployee() {
                         </div>
                         <p className="text-xs text-muted-foreground">On shift schedule</p>
                     </CardContent>
-                </Card>
+                </Card> */}
 
-                <Card>
+                {/* <Card>
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <CardTitle className="text-sm font-medium">Search Results</CardTitle>
                         <Search className="h-4 w-4 text-muted-foreground" />
@@ -219,7 +234,7 @@ export default function SupervisorEmployee() {
                         <div className="text-2xl font-bold">{filtered.length}</div>
                         <p className="text-xs text-muted-foreground">Matching your search</p>
                     </CardContent>
-                </Card>
+                </Card> */}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -273,7 +288,7 @@ export default function SupervisorEmployee() {
                                             </div>
                                         )}
 
-                                        {emp.workType && (
+                                        {(emp.workType || typeof emp.salary === 'number') && (
                                             <div className="flex items-center gap-3 text-sm">
                                                 <Briefcase className="w-4 h-4 text-muted-foreground shrink-0" />
                                                 <span className="text-muted-foreground">
@@ -286,7 +301,27 @@ export default function SupervisorEmployee() {
                                                 </span>
                                             </div>
                                         )}
-
+                                        {typeof emp.salary === 'number' && (
+                                            <span className="ml-auto flex items-center gap-3 text-muted-foreground font-medium">
+                                                <span className="flex items-center gap-1">
+                                                    <IndianRupee className="w-4 h-4 text-muted-foreground" />
+                                                    {emp.workType?.toLowerCase() === 'daily' ? 'Per Shift: ' : 'Salary: '}
+                                                    {formatINR(emp.salary)}
+                                                </span>
+                                            </span>
+                                        )}
+                                        {emp.workType?.toLowerCase() === 'daily' && typeof emp.shiftsWorked === 'number' && (
+                                            <span className="flex items-center text-muted-foreground gap-1 text-xs">
+                                                <Clock className="w-3 h-3" />
+                                                Shifts Today: {emp.shiftsWorked}
+                                            </span>
+                                        )}
+                                        {emp.workType?.toLowerCase() === 'daily' && (
+                                            <span className="flex text-muted-foreground items-center gap-1">
+                                                <IndianRupee className="w-4 h-4 text-muted-foreground" />
+                                                Today's Pay: {formatINR(calcTodaysPay(emp))}
+                                            </span>
+                                        )}
                                         {emp.joinDate && (
                                             <div className="flex items-center gap-3 text-sm">
                                                 <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
