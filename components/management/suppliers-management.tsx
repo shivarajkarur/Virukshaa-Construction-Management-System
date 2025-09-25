@@ -48,6 +48,7 @@ interface ProjectMaterial {
   projectId: string;
   materialType: string;
   quantity: number;
+  unit?: string;
   amount: number;
 }
 
@@ -98,6 +99,7 @@ interface ProjectMaterialLocal {
   materialType: string;
   quantity: number;
   amount: number;
+  unit?: string;
   date?: string; // Add this line
 }
 
@@ -158,6 +160,8 @@ const SuppliersManagement: React.FC = () => {
   const [currentBankDetail, setCurrentBankDetail] = useState<BankDetail | null>(null);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [selectedProjectForMaterial, setSelectedProjectForMaterial] = useState<string>("");
+  // Track which project's Add Material dialog is open
+  const [openMaterialDialogProject, setOpenMaterialDialogProject] = useState<string | null>(null);
 
   const filteredSuppliers = useMemo(() => {
     return suppliers.filter((supplier: Supplier) => {
@@ -182,7 +186,7 @@ const SuppliersManagement: React.FC = () => {
       const response = await fetch(`/api/suppliers/${supplierId}/materials`)
       if (!response.ok) throw new Error('Failed to fetch supplier materials')
       const data = await response.json()
-      
+
       const materialsObj: Record<string, ProjectMaterialLocal[]> = {}
       data.forEach((material: ProjectMaterialLocal) => {
         if (!materialsObj[material.projectId]) {
@@ -201,7 +205,7 @@ const SuppliersManagement: React.FC = () => {
             }
           }
         }
-      } catch {}
+      } catch { }
 
       setProjectMaterials(materialsObj)
     } catch (error) {
@@ -441,6 +445,7 @@ const SuppliersManagement: React.FC = () => {
         [projectId]: {
           materialType: "",
           quantity: 1,
+          unit: "Bags",
           amount: 0,
           date: new Date().toISOString(),
           projectId,
@@ -461,10 +466,11 @@ const SuppliersManagement: React.FC = () => {
   }
   const addMaterialToProject = async (projectId: string) => {
     const currentInput = projectMaterialInputs[projectId] || {};
-    const { materialType, quantity, amount } = currentInput as {
+    const { materialType, quantity, amount, unit } = currentInput as {
       materialType?: string;
       quantity?: number;
       amount?: number;
+      unit?: string;
     };
 
     // Validate input values
@@ -489,6 +495,7 @@ const SuppliersManagement: React.FC = () => {
       projectId,
       materialType,
       quantity: Number(quantity),
+      unit: unit,
       amount: Number(amount),
       date: selectedDate || timestamp,
       createdAt: timestamp,
@@ -521,6 +528,7 @@ const SuppliersManagement: React.FC = () => {
                 projectId,
                 materialType,
                 quantity: Number(quantity),
+                unit: unit,
                 amount: Number(amount),
                 date: timestamp,
                 createdAt: timestamp,
@@ -583,13 +591,14 @@ const SuppliersManagement: React.FC = () => {
         [projectId]: {
           materialType: "",
           quantity: 1,
+          unit: "Bags",
           amount: 0,
           projectId: "",
           date: ""
         }
       }));
 
-      toast.success(`Added new ${materialType} entry (Qty: ${quantity}, Amount: ₹${amount})`);
+      toast.success(`Added new ${materialType} entry (Qty: ${quantity} ${unit || ''}, Amount: ₹${amount})`);
     } catch (error) {
       console.error('Error adding material:', error);
       toast.error(`Failed to add material: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -754,6 +763,7 @@ const SuppliersManagement: React.FC = () => {
             projectId: material.projectId,
             materialType: material.materialType,
             quantity: Number(material.quantity) || 0,
+            unit: material.unit,
             amount: Number(material.amount) || 0,
             date: material.date
           });
@@ -763,11 +773,12 @@ const SuppliersManagement: React.FC = () => {
         setProjectMaterials(groupedMaterials);
 
         // Initialize input states for existing projects
-        const inputStates: Record<string, { materialType: string; quantity: number; amount: number; projectId: string; date: string }> = {};
+        const inputStates: Record<string, { materialType: string; quantity: number; unit: string; amount: number; projectId: string; date: string }> = {};
         Object.keys(groupedMaterials).forEach(projectId => {
           inputStates[projectId] = {
             materialType: "",
             quantity: 1,
+            unit: "Bags",
             amount: 0,
             projectId,
             date: new Date().toISOString(),
@@ -807,9 +818,9 @@ const SuppliersManagement: React.FC = () => {
     }
   }
 
-  
 
- 
+
+
   // Calculate statistics
   const totalSuppliers = suppliers.length
 
@@ -855,7 +866,7 @@ const SuppliersManagement: React.FC = () => {
                   <p className="text-sm text-muted-foreground">{supplier.contactPerson}</p>
                 </div>
               </div>
-              
+
             </div>
             <div className="space-y-2 mb-4">
               <div className="flex items-center gap-2 text-sm">
@@ -969,7 +980,7 @@ const SuppliersManagement: React.FC = () => {
             <TableRow>
               <TableHead>Company</TableHead>
               <TableHead>Contact Person</TableHead>
-              
+
               <TableHead>Materials</TableHead>
               <TableHead>Contact</TableHead>
               <TableHead>Actions</TableHead>
@@ -1005,7 +1016,7 @@ const SuppliersManagement: React.FC = () => {
                 <TableCell>
                   <div className="font-medium">{supplier.contactPerson}</div>
                 </TableCell>
-                
+
                 <TableCell>
                   <div className="flex flex-wrap gap-1 max-w-xs">
                     {supplier.materialTypes.slice(0, 2).map((material) => (
@@ -1074,7 +1085,7 @@ const SuppliersManagement: React.FC = () => {
             <p className="text-xs text-muted-foreground">Registered suppliers</p>
           </CardContent>
         </Card>
-        
+
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Credit Suppliers</CardTitle>
@@ -1573,7 +1584,7 @@ const SuppliersManagement: React.FC = () => {
             />
           </div>
 
-          
+
 
           {/* Badge */}
           <Badge variant="default" className="ml-auto">
@@ -1829,87 +1840,135 @@ const SuppliersManagement: React.FC = () => {
                               </Button>
                             </CardHeader>
                             <CardContent className="space-y-4">
-                              {/* Add Material Form */}
-                              <div className="space-y-2">
+                              {/* Add Material - Dialog Trigger */}
+                              <div className="flex items-center justify-between">
                                 <Label className="text-sm font-medium">Add Material</Label>
-                                <div className="gap-3 flex flex-col">
-                                  <div className="sm:col-span-5">
-                                    <Select
-                                      value={currentInput.materialType}
-                                      onValueChange={(value) => updateProjectMaterialInput(projectId, "materialType", value)}
-                                    >
-                                      <SelectTrigger className="w-full h-9">
-                                        <SelectValue placeholder="Select material" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {selectedSupplier.materialTypes?.map((material) => (
-                                          <SelectItem key={`${material}-${projectId}`} value={material}>
-                                            {material}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <Input
-                                    type="number"
-                                    placeholder="Qty"
-                                    min="1"
-                                    value={currentInput.quantity}
-                                    onChange={(e) => updateProjectMaterialInput(projectId, "quantity", e.target.value)}
-                                    className="sm:col-span-2 text-center h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                  />
-                                  <div className="relative sm:col-span-3">
-                                    <IndianRupee className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
-                                    <Input
-                                      type="number"
-                                      placeholder="Amount"
-                                      min="0"
-                                      step="0.01"
-                                      value={currentInput.amount}
-                                      onChange={(e) => updateProjectMaterialInput(projectId, "amount", e.target.value)}
-                                      className="pl-8 text-center h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    />
-                                  </div>
-                                  <div className="sm:col-span-3">
-                                    <Popover>
-                                      <PopoverTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          className={cn("w-full justify-start text-left font-normal h-9", !currentInput.date && "text-muted-foreground")}
-                                        >
-                                          <CalendarIcon className="mr-2 h-4 w-4" />
-                                          {currentInput.date ? (
-                                            format(new Date(currentInput.date), "dd MMM yyyy")
-                                          ) : (
-                                            <span>Pick date</span>
-                                          )}
-                                        </Button>
-                                      </PopoverTrigger>
-                                      <PopoverContent className="w-auto p-0" align="start">
-                                        <CalendarComponent
-                                          mode="single"
-                                          selected={currentInput.date ? new Date(currentInput.date) : undefined}
-                                          onSelect={(date) => updateProjectMaterialInput(projectId, "date", date ? date.toISOString() : "")}
-                                          initialFocus
-                                        />
-                                      </PopoverContent>
-                                    </Popover>
-                                  </div>
-                                  <Button
-                                    onClick={() => addMaterialToProject(projectId)}
-                                    disabled={
-                                      !currentInput.materialType ||
-                                      !currentInput.quantity ||
-                                      Number(currentInput.quantity) <= 0 ||
-                                      Number(currentInput.amount) < 0 ||
-                                      isSaving
-                                    }
-                                    className="sm:col-span-2 h-9"
-                                  >
-                                    {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                                  </Button>
-                                </div>
+                                <Button variant="outline" size="sm" onClick={() => setOpenMaterialDialogProject(projectId)}>
+                                  <Plus className="w-4 h-4 mr-1" /> Add Material
+                                </Button>
                               </div>
+
+                              {/* Add Material Dialog */}
+                              <Dialog open={openMaterialDialogProject === projectId} onOpenChange={(open) => setOpenMaterialDialogProject(open ? projectId : null)}>
+                                <DialogContent className="max-w-lg">
+                                  <DialogHeader>
+                                    <DialogTitle>Add Material for {project.title}</DialogTitle>
+                                    <DialogDescription>
+                                      Select material and fill quantity, amount, and date.
+                                    </DialogDescription>
+                                  </DialogHeader>
+                                  <div className="grid grid-cols-2 gap-2 items-center ">
+                                    <div>
+                                      <Label className="text-sm">Material</Label>
+                                      <Select
+                                        value={currentInput.materialType}
+                                        onValueChange={(value) => updateProjectMaterialInput(projectId, "materialType", value)}
+                                      >
+                                        <SelectTrigger className="w-full h-9">
+                                          <SelectValue placeholder="Select material" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {selectedSupplier.materialTypes?.map((material) => (
+                                            <SelectItem key={`${material}-${projectId}`} value={material}>
+                                              {material}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+
+                                    <div>
+                                      <Label className="text-sm">Types</Label>
+                                      <Input
+                                        id={`unit-${projectId}`}
+                                        list={`unit-options-${projectId}`}
+                                   
+                                        onChange={(e) => updateProjectMaterialInput(projectId, "unit", e.target.value)}
+                                        placeholder="Select or type a type/unit"
+                                        className="h-9"
+                                      />
+                                      <datalist id={`unit-options-${projectId}`}>
+                                        <option value="Bags">Bags</option>
+                                        <option value="Kg">Kg</option>
+                                        <option value="Ton">Ton</option>
+                                        <option value="Liters">Liters</option>
+                                        <option value="Pieces">Pieces</option>
+                                      </datalist>
+                                    </div>
+
+                                    <div>
+                                      <Label className="text-sm">Quantity</Label>
+                                      <Input
+                                        type="text"
+                                        inputMode="numeric"
+                                        pattern="[0-9]*"
+                                        placeholder="Qty"
+                                        onChange={(e) =>
+                                          updateProjectMaterialInput(projectId, "quantity", e.target.value)
+                                        }
+                                        className="text-center h-9"
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label className="text-sm">Amount</Label>
+                                      <div className="relative">
+                                        <IndianRupee className="absolute left-2 top-2.5 w-4 h-4 text-muted-foreground" />
+                                        <Input
+                                          type="text"
+                                          inputMode="numeric"
+                                          pattern="[0-9]*"
+                                          placeholder="Amount"
+                                          onChange={(e) => updateProjectMaterialInput(projectId, "amount", e.target.value)}
+                                          className="pl-8 text-center h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    <div>
+                                      <Label className="text-sm">Date</Label>
+                                      <Popover>
+                                        <PopoverTrigger asChild>
+                                          <Button
+                                            variant="outline"
+                                            className={cn("w-full justify-start text-left font-normal h-9", !currentInput.date && "text-muted-foreground")}
+                                          >
+                                            <CalendarIcon className="mr-2 h-4 w-4" />
+                                            {currentInput.date ? (
+                                              format(new Date(currentInput.date), "dd MMM yyyy")
+                                            ) : (
+                                              <span>Pick date</span>
+                                            )}
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-auto p-0" align="start">
+                                          <CalendarComponent
+                                            mode="single"
+                                            selected={currentInput.date ? new Date(currentInput.date) : undefined}
+                                            onSelect={(date) => updateProjectMaterialInput(projectId, "date", date ? date.toISOString() : "")}
+                                            initialFocus
+                                          />
+                                        </PopoverContent>
+                                      </Popover>
+                                    </div>
+                                    <br />
+                                  </div>
+                                  <div className="w-full flex justify-center gap-2 pt-2">
+                                    <Button variant="outline" onClick={() => setOpenMaterialDialogProject(null)}>Cancel</Button>
+                                    <Button
+                                      onClick={() => { addMaterialToProject(projectId); setOpenMaterialDialogProject(null); }}
+                                      disabled={
+                                        !currentInput.materialType ||
+                                        !currentInput.quantity ||
+                                        Number(currentInput.quantity) <= 0 ||
+                                        Number(currentInput.amount) < 0 ||
+                                        isSaving
+                                      }
+                                    >
+                                      {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : "Add Material"}
+                                    </Button>
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
 
                               {/* Material List */}
                               <div className="space-y-2">
@@ -1919,7 +1978,9 @@ const SuppliersManagement: React.FC = () => {
                                     className="flex flex-wrap sm:flex-nowrap justify-between items-center bg-white p-3 rounded border"
                                   >
                                     <div className="flex items-center gap-2 mb-2 sm:mb-0">
-                                      <Package className="w-4 h-4 text-blue-600" />
+                                      <div className="flex items-center justify-center w-6 h-6  text-blue-600 text-sm font-medium">
+                                        {idx + 1}
+                                      </div>
                                       <div>
                                         <div className="font-medium text-sm">{material.materialType}</div>
                                         <div className="text-xs text-gray-500">
@@ -1927,10 +1988,11 @@ const SuppliersManagement: React.FC = () => {
                                         </div>
                                       </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
+
+                                    <div className="flex items-center gap-1">
                                       <div className="text-sm text-gray-600">
-                                        <span className="font-medium">Qty:</span> {material.quantity}
-                                        <span className="mx-2">|</span>
+                                        <span className="font-medium">Qty:</span> {material.quantity} <br />
+                                        <span className="font-medium">Type:</span> {material.unit} <br />
                                         <span className="font-medium">Amount:</span> ₹{material.amount.toFixed(2)}
                                       </div>
                                       <Button
@@ -1956,7 +2018,7 @@ const SuppliersManagement: React.FC = () => {
                       })}
 
                       {/* Empty State */}
-                      
+
                       {Object.keys(projectMaterials).length === 0 && (
                         <div className="text-center py-10 rounded-lg border border-dashed bg-muted/20 space-y-2">
                           <Building2 className="w-10 h-10 mx-auto text-muted-foreground mb-1" />

@@ -96,7 +96,7 @@ export default function MaterialsManagement() {
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjectInventory, setSelectedProjectInventory] = useState<string>("")
   const [selectedProjectRequest, setSelectedProjectRequest] = useState<string>("")
-  
+
   const [inventoryData, setInventoryData] = useState<{
     name: string;
     category: string;
@@ -319,7 +319,7 @@ export default function MaterialsManagement() {
       }
 
       const isHardcodedMaterial = materialId.startsWith('hardcoded-');
-      
+
       const supervisorId = typeof window !== 'undefined' ? localStorage.getItem('userId') : null
       const role = typeof window !== 'undefined' ? localStorage.getItem('userRole') : null
       const response = await fetch('/api/material-requests', {
@@ -412,14 +412,14 @@ export default function MaterialsManagement() {
     setLoading(true)
 
     try {
-      const url = editingMaterial 
+      const url = editingMaterial
         ? `/api/materials/${editingMaterial._id}`
         : '/api/materials'
-      
+
       const method = editingMaterial ? 'PUT' : 'POST'
-      
+
       console.log('Submitting material data:', { url, method, data: inventoryData })
-      
+
       const supervisorId = typeof window !== 'undefined' ? localStorage.getItem('userId') : null
       if (!supervisorId) {
         toast.error('Authentication Error', { description: 'Please sign in to manage materials.' })
@@ -446,16 +446,16 @@ export default function MaterialsManagement() {
       }
 
       const result = await response.json()
-      
+
       if (!response.ok) {
         console.error('API error response:', result)
         throw new Error(result.message || 'Failed to save material')
       }
 
       console.log('API success response:', result)
-      
+
       if (editingMaterial) {
-        setMaterials(materials.map(m => 
+        setMaterials(materials.map(m =>
           m._id === result._id ? { ...m, ...result } : m
         ))
       } else {
@@ -654,7 +654,7 @@ export default function MaterialsManagement() {
             <ShoppingCart className="w-4 h-4 mr-2" />
             Requests
           </Button>
-          
+
           {activeTab === "inventory" && (
             <Dialog open={isInventoryDialogOpen} onOpenChange={setIsInventoryDialogOpen}>
               <DialogTrigger asChild>
@@ -670,7 +670,7 @@ export default function MaterialsManagement() {
                 <DialogHeader>
                   <DialogTitle>{editingMaterial ? 'Edit' : 'Add New'} Material</DialogTitle>
                   <DialogDescription>
-                    {editingMaterial 
+                    {editingMaterial
                       ? 'Update the material details below.'
                       : 'Fill in the details to add a new material to inventory.'}
                   </DialogDescription>
@@ -694,61 +694,53 @@ export default function MaterialsManagement() {
                         </select>
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <Label htmlFor="materialName">Material Name *</Label>
-                      <Input
-                        id="materialName"
-                        value={inventoryData.name}
-                        onChange={(e) => setInventoryData({...inventoryData, name: e.target.value})}
-                        placeholder="e.g., Portland Cement"
-                        required
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="materialName">Material Name *</Label>
+                        <Input
+                          id="materialName"
+                          value={inventoryData.name}
+                          onChange={(e) => setInventoryData({ ...inventoryData, name: e.target.value })}
+                          placeholder="e.g., Portland Cement"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="unit">Types</Label>
+                        <Input
+                          id="unit"
+                          value={inventoryData.unit || ''}
+                          onChange={(e) => setInventoryData({ ...inventoryData, unit: e.target.value })}
+                          placeholder="e.g., Bags, Pieces"
+                        />
+                      </div>
                     </div>
-                  
+
                   </div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="currentStock">Current Stock *</Label>
                       <Input
                         id="currentStock"
-                        type="number"
-                        min="0"
-                        value={inventoryData.currentStock}
-                        onChange={(e) => setInventoryData({...inventoryData, currentStock: Number(e.target.value)})}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="reorderLevel">Reorder Level *</Label>
-                      <Input
-                        id="reorderLevel"
-                        type="number"
-                        min="0"
-                        value={inventoryData.reorderLevel}
-                        onChange={(e) => setInventoryData({...inventoryData, reorderLevel: Number(e.target.value)})}
-                        required
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="unit">Unit</Label>
-                      <Input
-                        id="unit"
-                        value={inventoryData.unit || ''}
-                        onChange={(e) => setInventoryData({...inventoryData, unit: e.target.value})}
-                        placeholder="e.g., Bags, Pieces"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="eg: 10"
+                        onChange={(e) => setInventoryData({ ...inventoryData, currentStock: Number(e.target.value) })}
+                        className="pl-8 text-center h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+
                       />
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 gap-4">
-                  
+
                     <div className="space-y-2">
                       <Label htmlFor="status">Status *</Label>
                       <select
                         id="status"
                         value={inventoryData.status}
-                        onChange={(e) => setInventoryData({...inventoryData, status: e.target.value as any})}
+                        onChange={(e) => setInventoryData({ ...inventoryData, status: e.target.value as any })}
                         className="w-full p-2 border rounded-md"
                         required
                       >
@@ -759,7 +751,7 @@ export default function MaterialsManagement() {
                       </select>
                     </div>
                   </div>
-               
+
                   <div className="flex justify-end gap-2 pt-4">
                     <Button
                       type="button"
@@ -779,7 +771,7 @@ export default function MaterialsManagement() {
               </DialogContent>
             </Dialog>
           )}
-          
+
           <Dialog open={isRequestDialogOpen} onOpenChange={setIsRequestDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={resetRequestForm}>
@@ -823,7 +815,7 @@ export default function MaterialsManagement() {
                           const selectedMaterial = materials.find(
                             m => `${m.name} (${m.unit})` === e.target.value
                           );
-                          
+
                           // If not found in API materials, check if it's a hardcoded material
                           if (!selectedMaterial) {
                             const hardcodedMatch = e.target.value.match(/(.+?)\s+\((.+?)\)/);
@@ -838,7 +830,7 @@ export default function MaterialsManagement() {
                               return;
                             }
                           }
-                          
+
                           // Handle API material or clear if not found
                           setRequestData({
                             ...requestData,
@@ -853,8 +845,8 @@ export default function MaterialsManagement() {
                       />
                       <datalist id="materialSuggestions">
                         {materials.map((material) => (
-                          <option 
-                            key={material._id} 
+                          <option
+                            key={material._id}
                             value={`${material.name} (${material.unit})`}
                             data-unit={material.unit}
                           />
@@ -877,10 +869,11 @@ export default function MaterialsManagement() {
                     <Label htmlFor="quantity">Quantity *</Label>
                     <Input
                       id="quantity"
-                      type="number"
-                      value={requestData.quantity}
+                      type="text"
+                      inputMode="numeric"
                       onChange={(e) => setRequestData({ ...requestData, quantity: +e.target.value })}
                       placeholder="Enter quantity"
+                      className="pl-8 text-center h-9 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                       required
                     />
                   </div>
@@ -896,7 +889,7 @@ export default function MaterialsManagement() {
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                
+
                   <div className="space-y-2">
                     <Label htmlFor="requiredDate">Required Date *</Label>
                     <Input
@@ -1057,18 +1050,18 @@ export default function MaterialsManagement() {
                 </div>
 
                 <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="flex-1 bg-transparent"
                     onClick={() => handleEditMaterial(material)}
                   >
                     <Edit className="w-4 h-4 mr-2" />
                     Update Stock
                   </Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     className="flex-1 bg-transparent"
                     onClick={() => {
                       setRequestData({

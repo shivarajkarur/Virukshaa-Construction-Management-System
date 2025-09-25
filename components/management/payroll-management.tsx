@@ -7,7 +7,10 @@
 // import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 // import { Badge } from "@/components/ui/badge"
 // import { Input } from "@/components/ui/input"
-// import { Search, Download, PlusCircle, Filter, X, Edit, Calendar, Check, Trash2 } from "lucide-react"
+// import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+// import { Label } from "@/components/ui/label"
+// import { Search, Download, Filter, X, Edit, Calendar, Check, Trash2, Plus } from "lucide-react"
 // import { jsPDF } from "jspdf"
 // import { useToast } from "@/hooks/use-toast"
 
@@ -90,6 +93,8 @@
 //   const [editForm, setEditForm] = useState<User | null>(null)
 //   const [isSaving, setIsSaving] = useState(false)
 //   const [isExporting, setIsExporting] = useState(false)
+//   const [isExportDialogOpen, setIsExportDialogOpen] = useState(false)
+//   const [selectedExportSections, setSelectedExportSections] = useState<string[]>(["all"])
 //   const [projects, setProjects] = useState<{ _id: string; name: string }[]>([])
 //   const [supplierMaterials, setSupplierMaterials] = useState<Record<string, any[]>>({})
 //   const [payrollBySupplier, setPayrollBySupplier] = useState<
@@ -97,6 +102,14 @@
 //   >({})
 //   const [selectedDate, setSelectedDate] = useState<string>("")
 //   const [payrollRecords, setPayrollRecords] = useState<any[]>([])
+
+//   const [isAddPaymentOpen, setIsAddPaymentOpen] = useState(false)
+//   const [addPaymentForm, setAddPaymentForm] = useState({
+//     role: "",
+//     userId: "",
+//     amount: "",
+//     description: "",
+//   })
 
 //   // Memoized cache: userId-projectId -> materials[]
 //   const materialsCache = useMemo(() => {
@@ -922,118 +935,179 @@
 //     })
 //   }
 
-//   const handleExportToPDF = () => {
+//   const handleExportToPDF = (sections: string[] = ["all"]) => {
 //     setIsExporting(true)
 //     try {
 //       const doc = new jsPDF()
 //       const currentDate = new Date().toLocaleDateString()
+//       const pageWidth = doc.internal.pageSize.width
 
-//       doc.setFontSize(18)
-//       doc.text("Payroll Management Report", 14, 22)
-//       doc.setFontSize(10)
-//       doc.text(`Generated on: ${currentDate}`, 14, 30)
+//       // Header with better styling
+//       doc.setFontSize(20)
+//       doc.setFont("helvetica", "bold")
+//       doc.text("Payroll Management Report", pageWidth / 2, 25, { align: "center" })
 
-//       const roles: Array<User["role"]> = ["employee", "supervisor", "client", "supplier"]
-//       let startY = 40
+//       doc.setFontSize(12)
+//       doc.setFont("helvetica", "normal")
+//       doc.text(`Generated on: ${currentDate}`, pageWidth / 2, 35, { align: "center" })
 
-//       roles.forEach((role) => {
+//       // Add a line separator
+//       doc.setLineWidth(0.5)
+//       doc.line(20, 40, pageWidth - 20, 40)
+
+//       const roles: Array<User["role"]> = ["supervisor", "employee", "client", "supplier"]
+//       let startY = 50
+
+//       // Filter roles based on selection
+//       const rolesToExport = sections.includes("all") ? roles : roles.filter((role) => sections.includes(role))
+
+//       rolesToExport.forEach((role, roleIndex) => {
 //         const roleUsers = users.filter((user) => user.role === role)
 //         if (roleUsers.length === 0) return
 
-//         doc.setFontSize(14)
-//         doc.text(`${role.charAt(0).toUpperCase() + role.slice(1)}s`, 14, startY)
+//         // Check if we need a new page
+//         if (startY > 250) {
+//           doc.addPage()
+//           startY = 30
+//         }
+
+//         // Section header with background
+//         doc.setFillColor(240, 240, 240)
+//         doc.rect(20, startY - 5, pageWidth - 40, 12, "F")
+
+//         doc.setFontSize(16)
+//         doc.setFont("helvetica", "bold")
+//         doc.setTextColor(0, 0, 0)
+//         doc.text(`${role.charAt(0).toUpperCase() + role.slice(1)}s (${roleUsers.length})`, 25, startY + 3)
+//         startY += 15
+
+//         // Table setup with better spacing
+//         const isSupplier = role === "supplier"
+
+//         const headers = isSupplier
+//           ? ["Name", "Email", "Materials", "Total Value", "Paid", "Due"]
+//           : ["Name", "Email", "Phone", "Amount", "Paid", "Due", "Last Payment"]
+
+//         const columnWidths = isSupplier
+//           ? [30, 40, 35, 25, 20, 20] // Supplier columns without status
+//           : [25, 35, 20, 20, 18, 18, 24] // Non-supplier columns without status
+
+//         // Table header
+//         doc.setFillColor(220, 220, 220)
+//         doc.rect(20, startY, pageWidth - 40, 8, "F")
+
+//         doc.setFontSize(10)
+//         doc.setFont("helvetica", "bold")
+//         let xPos = 22
+//         headers.forEach((header, i) => {
+//           doc.text(header, xPos, startY + 5)
+//           xPos += columnWidths[i]
+//         })
 //         startY += 10
 
-//         const headers =
-//           role === "supplier"
-//             ? ["Name", "Email", "Materials", "Total Value", "Paid", "Due", "Status"]
-//             : ["Name", "Email", "Phone", "Amount", "Total Paid", "Due", "Last Payment", "Status"]
-//         const columnWidths = role === "supplier" ? [25, 35, 40, 25, 20, 20, 15] : [25, 40, 25, 20, 20, 20, 25, 15]
-
-//         let x = 5
-//         doc.setFontSize(9)
-//         // @ts-ignore jspdf types
-//         doc.setFont("helvetica", "bold")
-//         headers.forEach((header, i) => {
-//           doc.text(header, x, startY)
-//           x += columnWidths[i]
-//         })
-//         startY += 4
-//         doc.line(5, startY, 5 + columnWidths.reduce((a, b) => a + b, 0), startY)
-//         startY += 4
-//         // @ts-ignore jspdf types
+//         // Table rows
 //         doc.setFont("helvetica", "normal")
+//         doc.setFontSize(9)
 
-//         roleUsers.forEach((user) => {
-//           if (startY > 280) {
-//             doc.addPage()
-//             startY = 20
+//         roleUsers.forEach((user, userIndex) => {
+//           // Alternate row colors
+//           if (userIndex % 2 === 0) {
+//             doc.setFillColor(250, 250, 250)
+//             doc.rect(20, startY, pageWidth - 40, 12, "F")
 //           }
-//           let row: string[]
 
-//           if (role === "supplier") {
-//             const materialsText =
-//               user.projectMaterials && user.projectMaterials.length > 0
-//                 ? user.projectMaterials
-//                     .slice(0, 2)
-//                     .map((m) => `${m.materialType} (${m.quantity}×₹${m.pricePerUnit})`)
-//                     .join(", ") + (user.projectMaterials.length > 2 ? "..." : "")
-//                 : "No materials"
-//             row = [
+//           // Check for page break
+//           if (startY > 270) {
+//             doc.addPage()
+//             startY = 30
+
+//             // Repeat header on new page
+//             doc.setFillColor(220, 220, 220)
+//             doc.rect(20, startY, pageWidth - 40, 8, "F")
+//             doc.setFont("helvetica", "bold")
+//             xPos = 22
+//             headers.forEach((header, i) => {
+//               doc.text(header, xPos, startY + 5)
+//               xPos += columnWidths[i]
+//             })
+//             startY += 10
+//             doc.setFont("helvetica", "normal")
+//           }
+
+//           let rowData: string[]
+//           if (isSupplier) {
+//             const materialsText = user.projectMaterials?.length
+//               ? `${user.projectMaterials[0].materialType} (${user.projectMaterials[0].quantity})`
+//               : "No materials"
+
+//             rowData = [
 //               user.name || "N/A",
 //               user.email || "N/A",
 //               materialsText,
-//               `₹${(user.totalSupplyValue || 0).toFixed(2)}`,
-//               `₹${user.totalPaid?.toFixed(2) || "0.00"}`,
-//               `₹${user.dueAmount?.toFixed(2) || "0.00"}`,
-//               user.status || "N/A",
+//               `₹${(user.totalSupplyValue || 0).toLocaleString()}`,
+//               `₹${(user.totalPaid || 0).toLocaleString()}`,
+//               `₹${(user.dueAmount || 0).toLocaleString()}`,
 //             ]
 //           } else {
 //             let amount = "N/A"
-//             switch (user.role) {
-//               case "employee":
-//               case "supervisor":
-//                 amount = user.salary ? `₹${user.salary.toFixed(2)}` : "N/A"
-//                 break
-//               case "client":
-//                 amount = user.projectTotalAmount ? `₹${user.projectTotalAmount.toFixed(2)}` : "N/A"
-//                 break
+//             if (user.role === "employee" || user.role === "supervisor") {
+//               amount = user.salary ? `₹${user.salary.toLocaleString()}` : "N/A"
+//             } else if (user.role === "client") {
+//               amount = user.projectTotalAmount ? `₹${user.projectTotalAmount.toLocaleString()}` : "N/A"
 //             }
-//             row = [
+
+//             rowData = [
 //               user.name || "N/A",
 //               user.email || "N/A",
 //               user.phone || "N/A",
 //               amount,
-//               `₹${user.totalPaid?.toFixed(2) || "0.00"}`,
-//               `₹${user.dueAmount?.toFixed(2) || "0.00"}`,
+//               `₹${(user.totalPaid || 0).toLocaleString()}`,
+//               `₹${(user.dueAmount || 0).toLocaleString()}`,
 //               user.lastPaymentDate ? new Date(user.lastPaymentDate).toLocaleDateString() : "N/A",
-//               user.status || "N/A",
 //             ]
 //           }
 
-//           x = 5
-//           row.forEach((cell, i) => {
-//             const splitText = doc.splitTextToSize(cell, columnWidths[i] - 2)
-//             doc.text(splitText, x + 1, startY + 5)
-//             x += columnWidths[i]
+//           xPos = 22
+//           rowData.forEach((cell, i) => {
+//             const maxWidth = columnWidths[i] - 4
+//             const lines = doc.splitTextToSize(cell, maxWidth)
+//             doc.text(lines, xPos, startY + 8)
+//             xPos += columnWidths[i]
 //           })
-//           startY += 10
-//           if (startY < 280) {
-//             doc.line(5, startY, 5 + columnWidths.reduce((a, b) => a + b, 0), startY)
-//             startY += 2
-//           }
+
+//           startY += 12
 //         })
 
-//         startY += 15
+//         // Add spacing between sections
+//         startY += 10
+
+//         // Add section separator line
+//         if (roleIndex < rolesToExport.length - 1) {
+//           doc.setLineWidth(0.3)
+//           doc.line(20, startY, pageWidth - 20, startY)
+//           startY += 10
+//         }
 //       })
 
-//       doc.save(`payroll-report-${new Date().toISOString().split("T")[0]}.pdf`)
+//       // Footer
+//       const totalPages = doc.getNumberOfPages()
+//       for (let i = 1; i <= totalPages; i++) {
+//         doc.setPage(i)
+//         doc.setFontSize(8)
+//         doc.setFont("helvetica", "normal")
+//         doc.text(`Page ${i} of ${totalPages}`, pageWidth - 30, doc.internal.pageSize.height - 10)
+//         doc.text("Payroll Management System", 20, doc.internal.pageSize.height - 10)
+//       }
+
+//       const sectionText = sections.includes("all") ? "complete" : sections.join("-")
+//       doc.save(`payroll-report-${sectionText}-${new Date().toISOString().split("T")[0]}.pdf`)
 //       toast({ description: "PDF exported successfully!" })
 //     } catch (error) {
 //       console.error("Error generating PDF:", error)
 //       toast({ variant: "destructive", description: "Failed to generate PDF" })
 //     } finally {
 //       setIsExporting(false)
+//       setIsExportDialogOpen(false)
 //     }
 //   }
 
@@ -1304,6 +1378,65 @@
 //     }
 //   }
 
+//   const handleAddPayment = async () => {
+//     if (!addPaymentForm.role || !addPaymentForm.userId || !addPaymentForm.amount) {
+//       toast({ variant: "destructive", description: "Please fill in all required fields" })
+//       return
+//     }
+
+//     try {
+//       const selectedUser = users.find((u) => u._id === addPaymentForm.userId)
+//       if (!selectedUser) {
+//         toast({ variant: "destructive", description: "Selected user not found" })
+//         return
+//       }
+
+//       const paymentData = {
+//         userId: addPaymentForm.userId,
+//         userName: selectedUser.name,
+//         userRole: addPaymentForm.role,
+//         amount: Number.parseFloat(addPaymentForm.amount),
+//         description: addPaymentForm.description || `Payment to ${selectedUser.name}`,
+//         paymentDate: new Date().toISOString(),
+//         createdAt: new Date().toISOString(),
+//       }
+
+//       // Add to payroll records
+//       const newRecord = {
+//         _id: Date.now().toString(),
+//         ...paymentData,
+//       }
+
+//       setPayrollRecords((prev) => [...prev, newRecord])
+
+//       // Update user's total paid amount
+//       setUsers((prev) =>
+//         prev.map((user) =>
+//           user._id === addPaymentForm.userId
+//             ? {
+//                 ...user,
+//                 totalPaid: (user.totalPaid || 0) + Number.parseFloat(addPaymentForm.amount),
+//                 lastPaymentDate: new Date().toISOString(),
+//               }
+//             : user,
+//         ),
+//       )
+
+//       // Reset form and close dialog
+//       setAddPaymentForm({ role: "", userId: "", amount: "", description: "" })
+//       setIsAddPaymentOpen(false)
+
+//       toast({ description: "Payment added successfully!" })
+//     } catch (error) {
+//       console.error("Error adding payment:", error)
+//       toast({ variant: "destructive", description: "Failed to add payment" })
+//     }
+//   }
+
+//   const getUsersByRole = (role: string) => {
+//     return users.filter((user) => user.role === role)
+//   }
+
 //   if (isLoading) {
 //     return (
 //       <div className="flex items-center justify-center p-12">
@@ -1319,25 +1452,86 @@
 //           <h2 className="text-2xl font-bold tracking-tight">Payroll Management</h2>
 //           <p className="text-muted-foreground">Manage payments, salaries, and financial transactions</p>
 //         </div>
-//         <div className="flex items-center gap-2">
+
+//         <div className="flex gap-2">
 //           <Button
 //             variant="outline"
 //             size="sm"
 //             className="h-8 gap-1 bg-transparent"
-//             onClick={handleExportToPDF}
+//             onClick={() => setIsAddPaymentOpen(true)}
+//           >
+//             <Plus className="h-3.5 w-3.5" />
+//             <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Add Payment</span>
+//           </Button>
+//           <Button
+//             variant="outline"
+//             size="sm"
+//             className="h-8 gap-1 bg-transparent"
+//             onClick={() => setIsExportDialogOpen(true)}
 //             disabled={isExporting}
 //           >
 //             <Download className="h-3.5 w-3.5" />
-//             <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">
-//               {isExporting ? "Exporting..." : "Export"}
-//             </span>
-//           </Button>
-//           <Button size="sm" className="h-8 gap-1">
-//             <PlusCircle className="h-3.5 w-3.5" />
-//             <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Add Payment</span>
+//             <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Export</span>
 //           </Button>
 //         </div>
 //       </div>
+
+//       {/* Export Dialog */}
+//       <Dialog open={isExportDialogOpen} onOpenChange={setIsExportDialogOpen}>
+//         <DialogContent>
+//           <DialogHeader>
+//             <DialogTitle>Export Report</DialogTitle>
+//           </DialogHeader>
+//           <div className="space-y-3">
+//             <p className="text-sm text-muted-foreground">Choose which sections to include:</p>
+//             <div className="flex flex-wrap gap-2">
+//               {[
+//                 { key: 'all', label: 'All' },
+//                 { key: 'supervisor', label: 'Supervisors' },
+//                 { key: 'employee', label: 'Employees' },
+//                 { key: 'client', label: 'Clients' },
+//                 { key: 'supplier', label: 'Suppliers' },
+//               ].map((opt) => {
+//                 const active = selectedExportSections.includes(opt.key)
+//                 return (
+//                   <Button
+//                     key={opt.key}
+//                     type="button"
+//                     variant={active ? 'default' : 'outline'}
+//                     size="sm"
+//                     className="h-8"
+//                     onClick={() => {
+//                       if (opt.key === 'all') {
+//                         setSelectedExportSections(['all'])
+//                         return
+//                       }
+//                       setSelectedExportSections((prev) => {
+//                         const next = prev.includes('all') ? [] : [...prev]
+//                         if (next.includes(opt.key)) return next.filter((k) => k !== opt.key)
+//                         return [...next, opt.key]
+//                       })
+//                     }}
+//                   >
+//                     {opt.label}
+//                   </Button>
+//                 )
+//               })}
+//             </div>
+//             <div className="flex justify-end gap-2 pt-2">
+//               <Button type="button" variant="outline" onClick={() => setIsExportDialogOpen(false)}>
+//                 Cancel
+//               </Button>
+//               <Button
+//                 type="button"
+//                 onClick={() => handleExportToPDF(selectedExportSections)}
+//                 disabled={isExporting}
+//               >
+//                 {isExporting ? 'Exporting…' : 'Export PDF'}
+//               </Button>
+//             </div>
+//           </div>
+//         </DialogContent>
+//       </Dialog>
 
 //       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
 //         {stats.map((stat, index) => (
@@ -1786,6 +1980,86 @@
 //           </Table>
 //         </div>
 //       </Card>
+
+//       <Dialog open={isAddPaymentOpen} onOpenChange={setIsAddPaymentOpen}>
+//         <DialogContent className="sm:max-w-[425px]">
+//           <DialogHeader>
+//             <DialogTitle>Add New Payment</DialogTitle>
+//           </DialogHeader>
+//           <div className="grid gap-4 py-4">
+//             <div className="grid gap-2">
+//               <Label htmlFor="role">Select Role</Label>
+//               <Select
+//                 value={addPaymentForm.role}
+//                 onValueChange={(value) => {
+//                   setAddPaymentForm((prev) => ({ ...prev, role: value, userId: "" }))
+//                 }}
+//               >
+//                 <SelectTrigger>
+//                   <SelectValue placeholder="Choose a role" />
+//                 </SelectTrigger>
+//                 <SelectContent>
+//                   <SelectItem value="supervisor">Supervisor</SelectItem>
+//                   <SelectItem value="employee">Employee</SelectItem>
+//                   <SelectItem value="client">Client</SelectItem>
+//                   <SelectItem value="supplier">Supplier</SelectItem>
+//                 </SelectContent>
+//               </Select>
+//             </div>
+
+//             {addPaymentForm.role && (
+//               <div className="grid gap-2">
+//                 <Label htmlFor="user">Select {addPaymentForm.role}</Label>
+//                 <Select
+//                   value={addPaymentForm.userId}
+//                   onValueChange={(value) => {
+//                     setAddPaymentForm((prev) => ({ ...prev, userId: value }))
+//                   }}
+//                 >
+//                   <SelectTrigger>
+//                     <SelectValue placeholder={`Choose a ${addPaymentForm.role}`} />
+//                   </SelectTrigger>
+//                   <SelectContent>
+//                     {getUsersByRole(addPaymentForm.role).map((user) => (
+//                       <SelectItem key={user._id} value={user._id}>
+//                         {user.name} - {user.email}
+//                       </SelectItem>
+//                     ))}
+//                   </SelectContent>
+//                 </Select>
+//               </div>
+//             )}
+
+//             <div className="grid gap-2">
+//               <Label htmlFor="amount">Payment Amount</Label>
+//               <Input
+//                 id="amount"
+//                 type="number"
+//                 placeholder="Enter amount"
+//                 value={addPaymentForm.amount}
+//                 onChange={(e) => setAddPaymentForm((prev) => ({ ...prev, amount: e.target.value }))}
+//               />
+//             </div>
+
+//             <div className="grid gap-2">
+//               <Label htmlFor="description">Description (Optional)</Label>
+//               <Input
+//                 id="description"
+//                 placeholder="Payment description"
+//                 value={addPaymentForm.description}
+//                 onChange={(e) => setAddPaymentForm((prev) => ({ ...prev, description: e.target.value }))}
+//               />
+//             </div>
+//           </div>
+
+//           <div className="flex justify-end gap-2">
+//             <Button variant="outline" onClick={() => setIsAddPaymentOpen(false)}>
+//               Cancel
+//             </Button>
+//             <Button onClick={handleAddPayment}>Add Payment</Button>
+//           </div>
+//         </DialogContent>
+//       </Dialog>
 //     </div>
 //   )
 // }
@@ -1825,6 +2099,7 @@ type User = {
   phone?: string
   address?: string
   projectMaterials?: Array<{
+    _id: string
     projectId: string
     projectName?: string
     materialType: string
@@ -1837,6 +2112,10 @@ type User = {
     createdAt?: string
   }>
   selectedProjectId?: string
+  paymentHistory?: Array<{ date: string; amount: number; method: string }>
+  department?: string
+  position?: string
+  projectName?: string
   [key: string]: any
 }
 
@@ -2293,18 +2572,18 @@ const PayrollManagement = () => {
                 user.amount ||
                 0,
             )
-      transformed = { ...baseUser, salary }
+      transformed = { ...baseUser, salary, department: user.department, position: user.position }
     } else if (role === "supervisor") {
       const salary =
         typeof user.salary === "string"
           ? Number.parseFloat(user.salary.replace(/[^0-9.]/g, ""))
           : Number(user.salary || user.monthlySalary || user.supervisorSalary || 0)
-      transformed = { ...baseUser, salary }
+      transformed = { ...baseUser, salary, department: user.department, position: user.position }
     } else if (role === "client") {
       const projectTotalAmount = Number(
         user.projectTotalAmount || user.totalAmount || user.contractValue || user.amount || 0,
       )
-      transformed = { ...baseUser, projectTotalAmount }
+      transformed = { ...baseUser, projectTotalAmount, projectName: user.projectName }
     } else if (role === "supplier") {
       const rawMaterials = user.projectMaterials || user.materials || []
       const supplierMaterials = Array.isArray(rawMaterials)
@@ -2343,6 +2622,7 @@ const PayrollManagement = () => {
         totalSupplyValue: Number(user.totalSupplyValue || user.totalAmount || user.contractValue || calcSupply || 0),
         projectMaterials: supplierMaterials,
         totalPaid: Number(baseUser.totalPaid || 0),
+        paymentHistory: user.paymentHistory || [],
       }
     }
 
@@ -2486,18 +2766,29 @@ const PayrollManagement = () => {
             totalPaid: editForm.totalPaid,
             dueAmount: editForm.dueAmount,
             lastPaymentDate: editForm.lastPaymentDate,
+            department: editForm.department,
+            position: editForm.position,
           }
           break
         case "supervisor":
           apiData = {
             ...editForm,
             salary: editForm.salary,
+            totalPaid: editForm.totalPaid,
+            dueAmount: editForm.dueAmount,
+            lastPaymentDate: editForm.lastPaymentDate,
+            department: editForm.department,
+            position: editForm.position,
           }
           break
         case "client":
           apiData = {
             ...editForm,
             projectTotalAmount: editForm.projectTotalAmount,
+            totalPaid: editForm.totalPaid,
+            dueAmount: editForm.dueAmount,
+            lastPaymentDate: editForm.lastPaymentDate,
+            projectName: editForm.projectName,
           }
           break
         case "supplier":
@@ -2510,6 +2801,9 @@ const PayrollManagement = () => {
             status: editForm.status,
             totalPaid: editForm.totalPaid,
             lastPaymentDate: editForm.lastPaymentDate,
+            totalSupplyValue: editForm.totalSupplyValue,
+            projectMaterials: editForm.projectMaterials,
+            paymentHistory: editForm.paymentHistory,
           }
           break
       }
@@ -2545,6 +2839,7 @@ const PayrollManagement = () => {
           totalSupplyValue: keepSupply ?? transformedUser.totalSupplyValue,
           selectedProjectId:
             prevUser?.selectedProjectId ?? editForm.selectedProjectId ?? transformedUser.selectedProjectId,
+          paymentHistory: editForm.paymentHistory || prevUser?.paymentHistory || [],
         }
         // If supply value is still missing/zero but we have materials, compute from them
         if (
@@ -2728,6 +3023,133 @@ const PayrollManagement = () => {
       }
       return newForm
     })
+  }
+
+  const handleExportSingleUser = (user: User) => {
+    setIsExporting(true)
+    try {
+      const doc = new jsPDF()
+      const currentDate = new Date().toLocaleDateString()
+      const pageWidth = doc.internal.pageSize.width
+
+      // Header
+      doc.setFontSize(20)
+      doc.setFont("helvetica", "bold")
+      doc.text("Individual Payroll Report", pageWidth / 2, 25, { align: "center" })
+
+      doc.setFontSize(12)
+      doc.setFont("helvetica", "normal")
+      doc.text(`Generated on: ${currentDate}`, pageWidth / 2, 35, { align: "center" })
+
+      // Add a line separator
+      doc.setLineWidth(0.5)
+      doc.line(20, 40, pageWidth - 20, 40)
+
+      let startY = 55
+
+      // User details section
+      doc.setFontSize(16)
+      doc.setFont("helvetica", "bold")
+      doc.text(`${user.role.charAt(0).toUpperCase() + user.role.slice(1)} Details`, 20, startY)
+      startY += 15
+
+      // User information
+      doc.setFontSize(11)
+      doc.setFont("helvetica", "normal")
+
+      const userDetails = [
+        [`Name:`, user.name || "N/A"],
+        [`Email:`, user.email || "N/A"],
+        [`Phone:`, user.phone || "N/A"],
+        [`Role:`, user.role.charAt(0).toUpperCase() + user.role.slice(1)],
+      ]
+
+      // Add role-specific details
+      if (user.role === "employee" || user.role === "supervisor") {
+        if (user.salary) userDetails.push([`Salary:`, `₹${user.salary.toLocaleString()}`])
+        if (user.department) userDetails.push([`Department:`, user.department])
+        if (user.position) userDetails.push([`Position:`, user.position])
+      } else if (user.role === "client") {
+        if (user.projectTotalAmount)
+          userDetails.push([`Project Total:`, `₹${user.projectTotalAmount.toLocaleString()}`])
+        if (user.projectName) userDetails.push([`Project:`, user.projectName])
+      } else if (user.role === "supplier") {
+        if (user.totalSupplyValue) userDetails.push([`Supply Value:`, `₹${user.totalSupplyValue.toLocaleString()}`])
+        if (user.projectMaterials?.length) {
+          userDetails.push([
+            `Materials:`,
+            `${user.projectMaterials[0].materialType} (${user.projectMaterials[0].quantity})`,
+          ])
+        }
+      }
+
+      // Payment details
+      userDetails.push([`Total Paid:`, `₹${(user.totalPaid || 0).toLocaleString()}`])
+      userDetails.push([`Due Amount:`, `₹${(user.dueAmount || 0).toLocaleString()}`])
+      if (user.lastPaymentDate) {
+        userDetails.push([`Last Payment:`, new Date(user.lastPaymentDate).toLocaleDateString()])
+      }
+
+      userDetails.forEach(([label, value]) => {
+        doc.setFont("helvetica", "bold")
+        doc.text(label, 25, startY)
+        doc.setFont("helvetica", "normal")
+        doc.text(value, 80, startY)
+        startY += 8
+      })
+
+      // Payment history section if available
+      if (user.paymentHistory && user.paymentHistory.length > 0) {
+        startY += 10
+        doc.setFontSize(14)
+        doc.setFont("helvetica", "bold")
+        doc.text("Payment History", 20, startY)
+        startY += 10
+
+        // Table header
+        doc.setFillColor(220, 220, 220)
+        doc.rect(20, startY, pageWidth - 40, 8, "F")
+
+        doc.setFontSize(10)
+        doc.setFont("helvetica", "bold")
+        doc.text("Date", 25, startY + 5)
+        doc.text("Amount", 80, startY + 5)
+        doc.text("Method", 130, startY + 5)
+        startY += 10
+
+        // Payment entries
+        doc.setFont("helvetica", "normal")
+        doc.setFontSize(9)
+        user.paymentHistory.slice(0, 10).forEach((payment, index) => {
+          if (index % 2 === 0) {
+            doc.setFillColor(250, 250, 250)
+            doc.rect(20, startY, pageWidth - 40, 8, "F")
+          }
+
+          doc.text(new Date(payment.date).toLocaleDateString(), 25, startY + 5)
+          doc.text(`₹${payment.amount.toLocaleString()}`, 80, startY + 5)
+          doc.text(payment.method || "N/A", 130, startY + 5)
+          startY += 8
+        })
+      }
+
+      // Footer
+      doc.setFontSize(8)
+      doc.setFont("helvetica", "normal")
+      doc.text("Individual Payroll Report", 20, doc.internal.pageSize.height - 10)
+      doc.text(`Generated: ${currentDate}`, pageWidth - 60, doc.internal.pageSize.height - 10)
+
+      // Save with user-specific filename
+      const fileName = `payroll-${user.role}-${user.name?.replace(/\s+/g, "-") || "user"}-${new Date().toISOString().split("T")[0]}.pdf`
+      doc.save(fileName)
+
+      toast({ description: `Individual report for ${user.name} exported successfully!` })
+    } catch (error) {
+      console.error("Error generating individual PDF:", error)
+      toast({ variant: "destructive", description: "Failed to generate individual PDF" })
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const handleExportToPDF = (sections: string[] = ["all"]) => {
@@ -3163,13 +3585,13 @@ const PayrollManagement = () => {
         const { agg } = buildSupplierAggregates(updatedRecords)
         setPayrollBySupplier(agg)
 
-        toast.success("Payment amount updated successfully")
+        toast({ description: "Payment amount updated successfully" })
       } else {
-        toast.error("Failed to update payment amount")
+        toast({ variant: "destructive", description: "Failed to update payment amount" })
       }
     } catch (error) {
       console.error("Error updating payroll amount:", error)
-      toast.error("Error updating payment amount")
+      toast({ variant: "destructive", description: "Error updating payment amount" })
     }
   }
 
@@ -3281,27 +3703,27 @@ const PayrollManagement = () => {
             <p className="text-sm text-muted-foreground">Choose which sections to include:</p>
             <div className="flex flex-wrap gap-2">
               {[
-                { key: 'all', label: 'All' },
-                { key: 'supervisor', label: 'Supervisors' },
-                { key: 'employee', label: 'Employees' },
-                { key: 'client', label: 'Clients' },
-                { key: 'supplier', label: 'Suppliers' },
+                { key: "all", label: "All" },
+                { key: "supervisor", label: "Supervisors" },
+                { key: "employee", label: "Employees" },
+                { key: "client", label: "Clients" },
+                { key: "supplier", label: "Suppliers" },
               ].map((opt) => {
                 const active = selectedExportSections.includes(opt.key)
                 return (
                   <Button
                     key={opt.key}
                     type="button"
-                    variant={active ? 'default' : 'outline'}
+                    variant={active ? "default" : "outline"}
                     size="sm"
                     className="h-8"
                     onClick={() => {
-                      if (opt.key === 'all') {
-                        setSelectedExportSections(['all'])
+                      if (opt.key === "all") {
+                        setSelectedExportSections(["all"])
                         return
                       }
                       setSelectedExportSections((prev) => {
-                        const next = prev.includes('all') ? [] : [...prev]
+                        const next = prev.includes("all") ? [] : [...prev]
                         if (next.includes(opt.key)) return next.filter((k) => k !== opt.key)
                         return [...next, opt.key]
                       })
@@ -3316,12 +3738,8 @@ const PayrollManagement = () => {
               <Button type="button" variant="outline" onClick={() => setIsExportDialogOpen(false)}>
                 Cancel
               </Button>
-              <Button
-                type="button"
-                onClick={() => handleExportToPDF(selectedExportSections)}
-                disabled={isExporting}
-              >
-                {isExporting ? 'Exporting…' : 'Export PDF'}
+              <Button type="button" onClick={() => handleExportToPDF(selectedExportSections)} disabled={isExporting}>
+                {isExporting ? "Exporting…" : "Export PDF"}
               </Button>
             </div>
           </div>
@@ -3623,15 +4041,13 @@ const PayrollManagement = () => {
 
                         <TableCell className="text-right">
                           {editingId === user._id && editForm ? (
-                            <div className="space-y-1">
-                              <Input
-                                type="number"
-                                value={editForm.totalPaid || ""}
-                                onChange={(e) => handleFormChange("totalPaid", e.target.value)}
-                                className="h-7 text-right text-sm"
-                                placeholder="Paid amount"
-                              />
-                            </div>
+                            <Input
+                              type="number"
+                              value={editForm.totalPaid || ""}
+                              onChange={(e) => handleFormChange("totalPaid", e.target.value)}
+                              className="h-7 text-right text-sm"
+                              placeholder="Paid amount"
+                            />
                           ) : (
                             <div>
                               <div className="font-medium">{formatCurrency(user.totalPaid || 0)}</div>
@@ -3749,6 +4165,16 @@ const PayrollManagement = () => {
                           <>
                             <Button size="sm" variant="outline" onClick={() => handleEdit(user)} className="h-7 px-2">
                               <Edit className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleExportSingleUser(user)}
+                              disabled={isExporting}
+                              className="h-7 px-2"
+                              title={`Export ${user.name}'s payroll details`}
+                            >
+                              <Download className="h-3 w-3" />
                             </Button>
                             <Button
                               size="sm"

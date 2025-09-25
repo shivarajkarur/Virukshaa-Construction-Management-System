@@ -225,7 +225,7 @@ export default function DashboardLayout({
           { icon: Users, label: "Employees", href: "employees", id: "employees" },
           { icon: Users, label: "Clients", href: "clients", id: "clients" },
           // { icon: Users, label: "All Workers", href: "workers", id: "workers" },
-          // { icon: Package, label: "Materials", href: "materials", id: "materials" },
+          { icon: Package, label: "Materials", href: "materials", id: "materials" },
           { icon: ClipboardList, label: "Reports", href: "reports", id: "reports" },
           { icon: MessageSquare, label: "Payroll", href: "payroll", id: "payroll" },
           // { icon: MessageSquare, label: "Messages", href: "message", id: "message" },

@@ -47,6 +47,7 @@ export async function GET(request: NextRequest) {
     // Supervisors should only see their own materials
     const url = new URL(request.url)
     const supervisorId = url.searchParams.get('supervisorId')
+    const projectId = url.searchParams.get('projectId')
 
     const query: any = {}
     if (supervisorId) {
@@ -55,6 +56,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json([])
       }
       query.supervisor = new Types.ObjectId(String(supervisorId))
+    }
+    // Allow filtering by project as well (admin or scoped queries)
+    if (projectId) {
+      if (!Types.ObjectId.isValid(String(projectId))) {
+        return NextResponse.json([])
+      }
+      query.projectId = new Types.ObjectId(String(projectId))
     }
 
     const materials = await Material.find(query).sort({ name: 1 }).lean().exec()

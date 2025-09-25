@@ -242,7 +242,7 @@ export default function SupervisorEmployee() {
                     <Card key={emp._id} className="hover:shadow-lg transition-all duration-200 border-0 shadow-sm">
                         <CardContent className="p-6">
                             <div className="flex items-start gap-4">
-                                <Avatar className="h-14 w-14 ring-2 ring-background shadow-sm">
+                                {/* <Avatar className="h-14 w-14 ring-2 ring-background shadow-sm">
                                     <AvatarImage src={emp.avatar || "/placeholder.svg"} alt={emp.name} />
                                     <AvatarFallback className="bg-primary/10 text-primary font-semibold">
                                         {(emp.name || "?")
@@ -251,7 +251,7 @@ export default function SupervisorEmployee() {
                                             .join("")
                                             .toUpperCase()}
                                     </AvatarFallback>
-                                </Avatar>
+                                </Avatar> */}
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="min-w-0">
@@ -301,7 +301,7 @@ export default function SupervisorEmployee() {
                                                 </span>
                                             </div>
                                         )}
-                                        {typeof emp.salary === 'number' && (
+                                        {/* {typeof emp.salary === 'number' && (
                                             <span className="ml-auto flex items-center gap-3 text-muted-foreground font-medium">
                                                 <span className="flex items-center gap-1">
                                                     <IndianRupee className="w-4 h-4 text-muted-foreground" />
@@ -309,26 +309,26 @@ export default function SupervisorEmployee() {
                                                     {formatINR(emp.salary)}
                                                 </span>
                                             </span>
-                                        )}
-                                        {emp.workType?.toLowerCase() === 'daily' && typeof emp.shiftsWorked === 'number' && (
+                                        )} */}
+                                        {/* {emp.workType?.toLowerCase() === 'daily' && typeof emp.shiftsWorked === 'number' && (
                                             <span className="flex items-center text-muted-foreground gap-1 text-xs">
                                                 <Clock className="w-3 h-3" />
                                                 Shifts Today: {emp.shiftsWorked}
                                             </span>
-                                        )}
-                                        {emp.workType?.toLowerCase() === 'daily' && (
+                                        )} */}
+                                        {/* {emp.workType?.toLowerCase() === 'daily' && (
                                             <span className="flex text-muted-foreground items-center gap-1">
                                                 <IndianRupee className="w-4 h-4 text-muted-foreground" />
                                                 Today's Pay: {formatINR(calcTodaysPay(emp))}
                                             </span>
-                                        )}
-                                        {emp.joinDate && (
+                                        )} */}
+                                        {/* {emp.joinDate && (
                                             <div className="flex items-center gap-3 text-sm">
                                                 <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
                                                 <span className="text-muted-foreground">Joined {formatDate(emp.joinDate)}</span>
                                             </div>
-                                        )}
-
+                                        )} */}
+{/* 
                                         {emp.address && (
                                             <div className="flex items-center gap-3 text-sm">
                                                 <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -336,7 +336,7 @@ export default function SupervisorEmployee() {
                                                     {emp.address}
                                                 </span>
                                             </div>
-                                        )}
+                                        )} */}
                                     </div>
                                 </div>
                             </div>

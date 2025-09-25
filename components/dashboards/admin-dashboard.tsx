@@ -27,6 +27,7 @@ import {
 import { ChartContainer, ChartTooltipContent, ChartLegendContent } from "@/components/ui/chart"
 import * as RechartsPrimitive from "recharts"
 const MaterialsManagement = dynamic(() => import("@/components/management/materials-management"), { ssr: false })
+const AdminMaterials = dynamic(() => import("@/components/management/admin-materials"), { ssr: false })
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 const SupervisorsManagement = dynamic(() => import("@/components/management/supervisors-management"), { ssr: false })
@@ -1128,7 +1129,7 @@ export default function AdminDashboard() {
       case "workers":
         return <AllWorkersOverview />
       case "materials":
-        return <MaterialsManagement />
+        return <AdminMaterials />
       case "reports":
         return <Reportmanagement />
       case "payroll":

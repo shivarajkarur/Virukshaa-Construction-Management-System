@@ -5,6 +5,7 @@ export interface IProjectMaterial {
   materialType: string;
   quantity: number;
   amount: number;
+  unit?: string;
   date: Date;
 }
 
@@ -49,6 +50,10 @@ const projectMaterialSchema = new Schema<IProjectMaterial>({
     type: Number, 
     required: true,
     min: 1
+  },
+  unit: {
+    type: String,
+    required: false
   },
   amount: {
     type: Number,

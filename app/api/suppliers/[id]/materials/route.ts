@@ -8,6 +8,8 @@ type ProjectMaterial = {
   materialType: string;
   quantity: number;
   amount: number;
+  unit?: string;
+  date?: Date;
 };
 
 // GET /api/suppliers/[id]/materials
@@ -53,7 +55,7 @@ export async function POST(
 ) {
   try {
     const { id } = await ctx.params;
-    const { projectId, materialType, quantity, amount, date } = await request.json();
+    const { projectId, materialType, quantity, amount, date, unit } = await request.json();
     
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
@@ -86,11 +88,12 @@ export async function POST(
     await connectToDB();
     
     // Always add a new material entry, even if the same materialType exists for the project
-    const newMaterial = {
+    const newMaterial: ProjectMaterial = {
       projectId,
       materialType,
       quantity: Number(quantity),
       amount: Number(amount),
+      unit: unit || undefined,
       date: date ? new Date(date) : new Date()
     };
     
