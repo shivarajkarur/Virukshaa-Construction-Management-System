@@ -1,47 +1,73 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import connectToDB from "./db";
-import User from "@/models/UserModel";
+import AdminProfile from "@/models/AdminProfile";
+import Supervisor from "@/models/Supervisor";
+import Client from "@/models/ClientModel";
 
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Credentials",
       credentials: {
-        email: { label: "Email", type: "email" },
+        email: { label: "Email or Username", type: "text" },
         password: { label: "Password", type: "password" },
+        role: { label: "Role", type: "text" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Please enter your email and password");
+        if (!credentials?.email || !credentials?.password || !credentials?.role) {
+          throw new Error("Please enter your email/username, password, and role");
+        }
+
+        const identifier = String(credentials.email).trim();
+        const password = String(credentials.password);
+        const role = String(credentials.role).trim().toLowerCase();
+
+        if (!['superadmin', 'supervisor', 'client'].includes(role)) {
+          throw new Error("Invalid role. Must be one of: superadmin, supervisor, client");
         }
 
         await connectToDB();
-        
-        const user = await User.findOne({ email: credentials.email });
-        
-        if (!user || !user.password) {
-          throw new Error("No user found with this email");
+
+        // Match by email OR username (case-insensitive)
+        const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`^${escapeRegExp(identifier)}$`, 'i');
+
+        let user: any = null;
+        if (role === 'superadmin') {
+          user = await AdminProfile.findOne({ $or: [{ email: regex }, { username: regex }] });
+        } else if (role === 'supervisor') {
+          user = await Supervisor.findOne({ $or: [{ email: regex }, { username: regex }] }).select('+password');
+        } else if (role === 'client') {
+          user = await Client.findOne({ $or: [{ email: regex }, { username: regex }] }).select('+password');
         }
 
-        if (credentials.password !== user.password) {
+        if (!user) {
+          throw new Error("No user found with these credentials");
+        }
+
+        const stored = (user as any).password as string | undefined;
+        const isValid = stored ? stored === password : false;
+
+        if (!isValid) {
           throw new Error("Invalid password");
         }
 
+        const name = (role === 'superadmin') ? (user.adminName || user.name || 'Admin') : (user.name || 'User');
         return {
           id: user._id.toString(),
-          name: user.name,
+          name,
           email: user.email,
-          role: user.role,
-        };
+          role,
+        } as any;
       },
     }),
   ],
   callbacks: {
     async jwt({ token, user }) {
       if (user) {
-        token.id = user.id;
-        token.role = user.role;
+        token.id = (user as any).id;
+        token.role = (user as any).role;
       }
       return token;
     },

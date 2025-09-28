@@ -16,6 +16,7 @@ export interface IEmployee extends Document {
   totalPaid?: number;
   dueAmount?: number;
   lastPaymentDate?: Date;
+  projectId?: mongoose.Types.ObjectId;
   supervisor?: mongoose.Types.ObjectId;
 }
 
@@ -51,6 +52,7 @@ const employeeSchema = new Schema<IEmployee>({
   totalPaid: { type: Number, default: 0 },
   dueAmount: { type: Number, default: 0 },
   lastPaymentDate: { type: Date },
+  projectId: { type: Schema.Types.ObjectId, ref: 'Project', required: false },
   supervisor: { 
     type: Schema.Types.ObjectId, 
     ref: 'Supervisor',

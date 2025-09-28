@@ -1,5 +1,4 @@
 'use client'
-
 import { useCallback, useEffect, useMemo, useState, startTransition } from "react"
 import { format } from "date-fns"
 import { toast } from "sonner"
@@ -680,46 +679,6 @@ export default function SupervisorsPage() {
     }
   }, [])
 
-  const openEmployeeAssign = useCallback(() => {
-    if (!selectedSupervisor) return
-    fetchAvailableEmployees(selectedSupervisor._id)
-    setIsEmployeeAssignOpen(true)
-  }, [selectedSupervisor, fetchAvailableEmployees])
-
-  const handleEmployeeAssign = useCallback(async (employeeId: string) => {
-    if (!selectedSupervisor) return
-    try {
-      const res = await fetch(`/api/supervisors/${selectedSupervisor._id}/employees`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeId }),
-      })
-      if (!res.ok) throw new Error('Failed to assign employee')
-      toast.success('Employee assigned')
-      setIsEmployeeAssignOpen(false)
-      // refresh lists
-      fetchAssignedEmployees(selectedSupervisor._id)
-    } catch (e: any) {
-      console.error(e)
-      toast.error(e?.message || 'Could not assign employee')
-    }
-  }, [selectedSupervisor, fetchAssignedEmployees])
-
-  const handleEmployeeUnassign = useCallback(async (employeeId: string) => {
-    if (!selectedSupervisor) return
-    try {
-      const res = await fetch(`/api/supervisors/${selectedSupervisor._id}/employees/${employeeId}`, {
-        method: 'DELETE',
-      })
-      if (!res.ok) throw new Error('Failed to unassign employee')
-      toast.success('Employee unassigned')
-      // refresh list
-      fetchAssignedEmployees(selectedSupervisor._id)
-    } catch (e: any) {
-      console.error(e)
-      toast.error(e?.message || 'Could not unassign employee')
-    }
-  }, [selectedSupervisor, fetchAssignedEmployees])
 
   // When opening detail panel or switching to Team tab, load employees
   useEffect(() => {
@@ -1515,17 +1474,17 @@ export default function SupervisorsPage() {
         })
 
         if (!res.ok) throw new Error('Failed to update task')
-        
+
         const updated: Task = await res.json()
         setSupervisorTasks((prev) => prev.map((t) => (t._id === updated._id ? updated : t)))
-        
+
         toast.dismiss(loadingToast)
         toast.success('Task updated successfully')
-        
+
         setIsEditTaskFormOpen(false)
         setEditingTask(null)
         setTaskFormData(initialTaskFormData)
-        
+
         if (selectedSupervisor?._id) {
           await fetchSupervisorTasks(selectedSupervisor._id)
         }
@@ -1627,14 +1586,14 @@ export default function SupervisorsPage() {
   // Handle actual deletion after confirmation
   const handleDeleteSupervisor = useCallback(async () => {
     if (!supervisorToDelete) return
-    
+
     try {
       const res = await fetch(`/api/supervisors/${supervisorToDelete._id}`, { method: "DELETE" })
       if (!res.ok) throw new Error(await res.text())
-      
+
       setSupervisors((prev) => prev.filter((x) => x._id !== supervisorToDelete._id))
       if (selectedSupervisor?._id === supervisorToDelete._id) closeSupervisorDetail()
-      
+
       toast.success(`Deleted ${supervisorToDelete.name || "supervisor"}`)
       setIsDeleteDialogOpen(false)
       setSupervisorToDelete(null)
@@ -1749,7 +1708,7 @@ export default function SupervisorsPage() {
           const formDataWithFile = new FormData()
           formDataWithFile.append('file', formData.avatar)
           formDataWithFile.append('type', 'avatar')
-          
+
           const uploadRes = await fetch('/api/upload', {
             method: 'POST',
             body: formDataWithFile,
@@ -1786,6 +1745,101 @@ export default function SupervisorsPage() {
       }
     },
     [editingSupervisor, fetchSupervisors, formData, resetForm, supervisors]
+  )
+
+
+
+  const [selectedAssignProjectId, setSelectedAssignProjectId] = useState<string>("")
+
+
+
+
+
+  const openEmployeeAssign = useCallback(async () => {
+    if (!selectedSupervisor) return
+    try {
+      setSelectedAssignProjectId("")
+      // Ensure projects are loaded before opening the dialog
+      await fetchProjects()
+      // Prefetch available employees
+      await fetchAvailableEmployees(selectedSupervisor._id)
+      setIsEmployeeAssignOpen(true)
+    } catch (e) {
+      console.error(e)
+      toast.error("Failed to prepare assignment dialog")
+    }
+  }, [selectedSupervisor, fetchAvailableEmployees, fetchProjects])
+
+
+
+
+
+  const handleAssignProjectChange = useCallback(
+    (projectId: string) => {
+      setSelectedAssignProjectId(projectId)
+      if (selectedSupervisor) {
+        fetchAvailableEmployees(selectedSupervisor._id, projectId)
+      }
+    },
+    [selectedSupervisor, fetchAvailableEmployees],
+  )
+
+  const handleEmployeeAssign = useCallback(
+    async (employeeId: string) => {
+      if (!selectedSupervisor?._id || !selectedAssignProjectId) return
+      const loadingToast = toast.loading("Assigning employee...")
+      try {
+        const res = await fetch(`/api/supervisors/${selectedSupervisor._id}/employees`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId, projectId: selectedAssignProjectId }),
+        })
+        if (!res.ok) throw new Error(await res.text())
+        const assignedFromList = availableEmployees.find((e) => e._id === employeeId)
+        if (assignedFromList) {
+          setSupervisorEmployees((prev) => [...prev, { ...assignedFromList, projectId: selectedAssignProjectId }])
+        } else if (selectedSupervisor?._id) {
+          // Fallback: refetch assigned employees if we don't have the object locally
+          await fetchAssignedEmployees(selectedSupervisor._id)
+        }
+        // Remove from available list
+        setAvailableEmployees((prev) => prev.filter((e) => e._id !== employeeId))
+        toast.dismiss(loadingToast)
+        toast.success(`${assignedFromList?.name ?? "Employee"} assigned successfully`)
+        // Optionally close the dialog or clear selection
+        // setIsEmployeeAssignOpen(false)
+      } catch (e: any) {
+        console.error(e)
+        toast.dismiss(loadingToast)
+        toast.error(e?.message || "Failed to assign employee")
+      }
+    },
+    [selectedSupervisor, selectedAssignProjectId, fetchAvailableEmployees],
+  )
+
+  const handleEmployeeUnassign = useCallback(
+    async (employeeId: string) => {
+      if (!selectedSupervisor?._id) return
+      const loadingToast = toast.loading("Unassigning employee...")
+      try {
+        const res = await fetch(`/api/supervisors/${selectedSupervisor._id}/employees`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId }),
+        })
+        if (!res.ok) throw new Error(await res.text())
+        setSupervisorEmployees((prev) => prev.filter((e) => e._id !== employeeId))
+        // Re-fetch available employees to potentially add them back
+        fetchAvailableEmployees(selectedSupervisor._id, selectedAssignProjectId)
+        toast.dismiss(loadingToast)
+        toast.success("Employee unassigned successfully")
+      } catch (e: any) {
+        console.error(e)
+        toast.dismiss(loadingToast)
+        toast.error(e?.message || "Failed to unassign employee")
+      }
+    },
+    [selectedSupervisor, fetchAvailableEmployees, selectedAssignProjectId],
   )
 
   // UI: grid and list views
@@ -2631,15 +2685,15 @@ export default function SupervisorsPage() {
                                   {task.documentUrls.map((doc, index) => {
                                     // Handle both string and object formats
                                     const docUrl = typeof doc === 'string' ? doc : doc.url;
-                                    const docName = typeof doc === 'string' 
+                                    const docName = typeof doc === 'string'
                                       ? doc.split('/').pop() || `Document ${index + 1}`
                                       : doc.name || doc.url.split('/').pop() || `Document ${index + 1}`;
-                                    
+
                                     const fileType = docName.split('.').pop()?.toLowerCase() || '';
                                     const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileType);
                                     const isPdf = fileType === 'pdf';
                                     const isDoc = ['doc', 'docx'].includes(fileType);
-                                    
+
                                     return (
                                       <div
                                         key={index}
@@ -2692,6 +2746,7 @@ export default function SupervisorsPage() {
                     )}
                   </div>
                 </TabsContent>
+               
                 <TabsContent value="team" className="flex-1 overflow-y-auto pr-2 space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Team Members</h3>
@@ -2706,12 +2761,10 @@ export default function SupervisorsPage() {
                         <Card key={emp._id} className="hover:shadow-md transition-shadow">
                           <CardContent className="p-4 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <Avatar
-                                src={emp.avatar || "/placeholder.svg?height=32&width=32&query=avatar"}
-                                name={emp.name}
-                                size={32}
-                                className="h-8 w-8"
-                              />
+                              <div className="text-xs text-muted-foreground flex items-center gap-2">
+                                <Briefcase className="w-3 h-3" />
+                                <span>{availableProjects.find((p) => p._id === emp.projectId)?.title || "No project"}</span>
+                              </div>
                               <div>
                                 <h4 className="font-medium">{emp.name}</h4>
                                 <p className="text-sm text-muted-foreground">{emp.position}</p>
@@ -2728,7 +2781,12 @@ export default function SupervisorsPage() {
                       <div className="text-center py-8">
                         <Users className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
                         <p className="text-muted-foreground">No team members yet</p>
-                        <Button variant="outline" size="sm" onClick={openEmployeeAssign} className="mt-2 bg-transparent">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={openEmployeeAssign}
+                          className="mt-2 bg-transparent"
+                        >
                           <Plus className="w-4 h-4 mr-2" />
                           Assign First Employee
                         </Button>
@@ -3001,15 +3059,15 @@ export default function SupervisorsPage() {
           </DialogHeader>
           <div className="flex justify-end gap-3 mt-4">
             <DialogClose asChild>
-              <Button 
+              <Button
                 variant="outline"
                 onClick={() => setSupervisorToDelete(null)}
               >
                 Cancel
               </Button>
             </DialogClose>
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               onClick={(e) => {
                 e.stopPropagation();
                 handleDeleteSupervisor();
@@ -3023,12 +3081,29 @@ export default function SupervisorsPage() {
       </Dialog>
 
       {/* Employee assignment */}
-      <Dialog open={isEmployeeAssignOpen} onOpenChange={() => setIsEmployeeAssignOpen(false)}>
+      <Dialog open={isEmployeeAssignOpen} onOpenChange={setIsEmployeeAssignOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Assign Employee</DialogTitle>
-            <DialogDescription>Select an employee to assign to {selectedSupervisor?.name}.</DialogDescription>
+            <DialogDescription>
+              Select a project and an employee to assign to {selectedSupervisor?.name}.
+            </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2 mb-4">
+            <Label htmlFor="assign-project">Project</Label>
+            <Select value={selectedAssignProjectId} onValueChange={handleAssignProjectChange}>
+              <SelectTrigger id="assign-project" className="w-full">
+                <SelectValue placeholder={isLoadingProjects ? "Loading projects..." : "Select a project"} />
+              </SelectTrigger>
+              <SelectContent>
+                {availableProjects.map((p) => (
+                  <SelectItem key={p._id} value={p._id}>
+                    {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           {loadingEmployees ? (
             <div className="flex justify-center py-8">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary" />
@@ -3039,19 +3114,17 @@ export default function SupervisorsPage() {
                 <Button
                   key={employee._id}
                   variant="outline"
-                  className="w-full justify-start"
+                  className="w-full justify-start bg-transparent"
                   onClick={() => handleEmployeeAssign(employee._id)}
+                  disabled={!selectedAssignProjectId}
                 >
                   <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={employee.avatar || "/placeholder.svg?height=32&width=32&query=avatar"} alt={employee.name} />
-                      <AvatarFallback>
-                        {employee.name
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
+                    <Avatar
+                      src={employee.avatar || "/placeholder.svg?height=32&width=32&query=avatar"}
+                      name={employee.name}
+                      size={32}
+                      className="h-8 w-8"
+                    />
                     <div>
                       <h4 className="font-medium">{employee.name}</h4>
                       <p className="text-sm text-muted-foreground">{employee.position}</p>

@@ -253,6 +253,20 @@ export default function ClientsManagement() {
     fetchClients()
   }, [])
 
+  // Set up interval for automatic invoice status checking
+  useEffect(() => {
+    // Check statuses immediately on component mount
+    checkAndUpdateInvoiceStatuses();
+    
+    // Set up interval to check every hour
+    const intervalId = setInterval(() => {
+      checkAndUpdateInvoiceStatuses();
+    }, 60 * 60 * 1000); // Check every hour
+
+    // Cleanup interval on component unmount
+    return () => clearInterval(intervalId);
+  }, []);
+
   // Fetch all clients
   const fetchClients = async () => {
     setLoading(true)
@@ -314,6 +328,8 @@ export default function ClientsManagement() {
       }
       const data = await response.json()
       setClientInvoices(data)
+      // Check for overdue invoices after fetching
+      checkAndUpdateInvoiceStatuses(data);
     } catch (error) {
       console.error("Error fetching invoices:", error)
       setClientInvoices([])
@@ -322,6 +338,57 @@ export default function ClientsManagement() {
       setIsLoadingInvoices(false)
     }
   }
+
+  // Function to check and update invoice statuses based on due dates
+  const checkAndUpdateInvoiceStatuses = async (invoices?: Invoice[]) => {
+    try {
+      const targetInvoices = invoices || clientInvoices;
+      if (targetInvoices.length === 0) return;
+
+      const now = new Date();
+      const today = now.toISOString().split('T')[0];
+      
+      // Find invoices that are Pending and past due
+      const overdueInvoices = targetInvoices.filter(invoice => 
+        invoice.status === 'Pending' && 
+        invoice.dueDate < today
+      );
+
+      if (overdueInvoices.length === 0) return;
+
+      // Update each overdue invoice
+      for (const invoice of overdueInvoices) {
+        try {
+          const res = await fetch(`/api/invoices/${invoice._id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              ...invoice,
+              status: 'Overdue'
+            })
+          });
+
+          if (res.ok) {
+            // Update local state
+            setClientInvoices(prev => prev.map(inv => 
+              inv._id === invoice._id ? { ...inv, status: 'Overdue' } : inv
+            ));
+            console.log(`Updated invoice ${invoice.invoiceNumber} to Overdue`);
+          }
+        } catch (error) {
+          console.error(`Failed to update invoice ${invoice.invoiceNumber}:`, error);
+        }
+      }
+    } catch (error) {
+      console.error('Error checking invoice statuses:', error);
+    }
+  };
+
+  // Function to set initial status based on due date
+  const getInitialInvoiceStatus = (dueDate: string): 'Pending' | 'Overdue' => {
+    const today = new Date().toISOString().split('T')[0];
+    return dueDate < today ? 'Overdue' : 'Pending';
+  };
 
   // Message Dialog Functions
   const handleOpenMessageDialog = (client: Client) => {
@@ -1242,11 +1309,12 @@ export default function ClientsManagement() {
 
   const openNewInvoiceDialog = () => {
     setEditingInvoice(null)
+    const today = new Date().toISOString().split("T")[0];
     setInvoiceFormData({
       invoiceNumber: "",
       amount: 0,
-      status: "Pending",
-      dueDate: new Date().toISOString().split("T")[0],
+      status: getInitialInvoiceStatus(today),
+      dueDate: today,
       notes: "",
     })
     setIsInvoiceDialogOpen(true)
@@ -1897,9 +1965,9 @@ export default function ClientsManagement() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="Requested">Request</SelectItem>
                       <SelectItem value="Pending">Pending</SelectItem>
                       <SelectItem value="Paid">Paid</SelectItem>
-                      <SelectItem value="Overdue">Overdue</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

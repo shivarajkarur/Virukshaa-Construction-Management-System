@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Building2, Users, ClipboardList, Eye, EyeOff } from "lucide-react"
 import { toast } from "sonner"
+import { signIn } from "next-auth/react"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -81,29 +82,37 @@ export default function LoginPage() {
         toast.error('Please select a role');
         throw new Error('Please select a role');
       }
-      // Always authenticate against the API for all roles so passwords are validated
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password, role: selectedRole }),
+
+      // Use NextAuth to create a session cookie so secured APIs work
+      const result = await signIn('credentials', {
+        email, // can be email or username
+        password,
+        role: selectedRole,
+        redirect: false,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        toast.error(data.error || 'Login failed');
-        throw new Error(data.error || 'Login failed');
+      if (!result || result.error) {
+        const msg = result?.error || 'Login failed';
+        toast.error(msg);
+        throw new Error(msg);
       }
 
+      // Persist minimal info used by existing components
       localStorage.setItem("userRole", selectedRole);
-      localStorage.setItem("userEmail", data.user.email);
-      localStorage.setItem("userName", data.user.name || 'User');
-      // Persist backend user id for role-scoped data (e.g., supervisor tasks)
-      if (data.user && data.user._id) {
-        localStorage.setItem("userId", data.user._id);
+      if (email) localStorage.setItem("userEmail", email);
+      localStorage.setItem("userName", 'User');
+
+      // Fetch session to get user id for components relying on localStorage
+      try {
+        const sessRes = await fetch('/api/auth/session');
+        const sess = await sessRes.json();
+        const id = sess?.user?.id;
+        if (id) localStorage.setItem("userId", id);
+      } catch (e) {
+        // Non-blocking; components using useSession will still work
+        console.warn('Failed to fetch session after signIn:', e);
       }
+
       router.push("/dashboard");
     } catch (error) {
       console.error('Login error:', error);

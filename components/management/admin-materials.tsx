@@ -79,11 +79,11 @@ export default function AdminMaterials() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "In Stock":
-        return <Badge className="bg-green-100 text-green-800" variant="secondary"><CheckCircle className="w-3 h-3 mr-1"/>In Stock</Badge>
+        return <Badge className="bg-green-100 text-green-800" variant="secondary"><CheckCircle className="w-3 h-3 mr-1" />In Stock</Badge>
       case "Low Stock":
-        return <Badge className="bg-yellow-100 text-yellow-800" variant="secondary"><AlertTriangle className="w-3 h-3 mr-1"/>Low Stock</Badge>
+        return <Badge className="bg-yellow-100 text-yellow-800" variant="secondary"><AlertTriangle className="w-3 h-3 mr-1" />Low Stock</Badge>
       case "Out of Stock":
-        return <Badge className="bg-red-100 text-red-800" variant="secondary"><TrendingDown className="w-3 h-3 mr-1"/>Out of Stock</Badge>
+        return <Badge className="bg-red-100 text-red-800" variant="secondary"><TrendingDown className="w-3 h-3 mr-1" />Out of Stock</Badge>
       case "On Order":
         return <Badge className="bg-blue-100 text-blue-800" variant="secondary">On Order</Badge>
       default:
@@ -115,10 +115,10 @@ export default function AdminMaterials() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>Progress</span>
-                  <span>{typeof p.progress === 'number' ? `${p.progress}%` : '-'}</span>
-                </div>
+                {/* <div className="flex items-center justify-between text-sm text-muted-foreground"> */}
+                {/* <span>Progress</span> */}
+                {/* <span>{typeof p.progress === 'number' ? `${p.progress}%` : '-'}</span> */}
+                {/* </div> */}
                 {p.client?.name && (
                   <div className="mt-2 text-sm text-muted-foreground">Client: {p.client.name}</div>
                 )}
@@ -138,7 +138,7 @@ export default function AdminMaterials() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={() => { setSelectedProject(null); setMaterials([]); }}>
-            <ArrowLeft className="w-4 h-4 mr-2"/>
+            <ArrowLeft className="w-4 h-4 mr-2" />
             Back
           </Button>
           <div>
@@ -147,7 +147,7 @@ export default function AdminMaterials() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Input placeholder="Search materials..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-[240px]"/>
+          <Input placeholder="Search materials..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-[240px]" />
         </div>
       </div>
 
@@ -160,7 +160,7 @@ export default function AdminMaterials() {
           <Card key={m._id} className="hover:shadow-md">
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                <span className="flex items-center gap-2"><Package className="w-4 h-4"/>{m.name}</span>
+                <span className="flex items-center gap-2"><Package className="w-4 h-4" />{m.name}</span>
                 {getStatusBadge(m.status)}
               </CardTitle>
             </CardHeader>

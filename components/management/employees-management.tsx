@@ -1,6 +1,6 @@
 "use client"
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -34,7 +34,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { toast } from "sonner"
+import { useToast } from "@/hooks/use-toast"
 import {
   Plus,
   Edit,
@@ -55,15 +55,443 @@ import {
   RefreshCw,
   Clock4,
   MapPin,
-  Hash,
   Eye,
   MessageCircle,
   TrendingUp,
-  FileText,
   CalendarDays,
   IndianRupee,
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Calculator, HelpCircle } from "lucide-react"
+
+type AttendanceStatus = "Present" | "Absent" | "On Duty" | null
+
+// Attendance record type for API responses
+interface AttendanceRecord {
+  _id: string
+  employeeId: string | { _id: string }
+  date: string
+  status: AttendanceStatus
+  checkIn?: string
+  checkOut?: string
+  present?: boolean
+  leaveReason?: string | null
+  isPaid?: boolean
+  isLeaveApproved?: boolean
+  isLeavePaid?: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// Helper function to normalize attendance status values
+function normalizeAttendanceStatus(value: any, presentFlag?: boolean): AttendanceStatus {
+  if (typeof value === "string") {
+    const normalized = value.trim()
+    if (normalized === "Present" || normalized === "Absent" || normalized === "On Duty") {
+      return normalized
+    }
+  }
+
+  // Fallback logic based on present flag
+  if (typeof presentFlag === "boolean") {
+    return presentFlag ? "Present" : "Absent"
+  }
+
+  return null
+}
+
+const attendanceOptions = [
+  { value: "Present" as const, label: "Present", icon: CheckCircle },
+  { value: "On Duty" as const, label: "On Duty", icon: Briefcase },
+  { value: "Absent" as const, label: "Absent", icon: XCircle },
+]
+
+// Combined Attendance and Salary View for Employees
+function CombinedAttendanceView({
+  employeeId,
+  dailySalary,
+  initialMonth,
+}: {
+  employeeId: string
+  dailySalary: number
+  initialMonth?: string
+}) {
+  const [attendanceMap, setAttendanceMap] = useState<Record<string, AttendanceStatus>>({})
+  const [loading, setLoading] = useState(true)
+  const [selectedMonth, setSelectedMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7))
+  const [presentDays, setPresentDays] = useState(0)
+  const [onDutyDays, setOnDutyDays] = useState(0)
+  const [paidLeaveDays, setPaidLeaveDays] = useState(0)
+  const [unpaidLeaveDays, setUnpaidLeaveDays] = useState(0)
+  const [pendingLeaveDays, setPendingLeaveDays] = useState(0)
+  const [totalWorkingDays, setTotalWorkingDays] = useState(0)
+  const [attendanceRate, setAttendanceRate] = useState(0)
+  const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([])
+
+  useEffect(() => {
+    const fetchAttendance = async () => {
+      try {
+        setLoading(true)
+        const [fetchYear, fetchMonthNum] = selectedMonth.split("-").map(Number)
+        const startDate = new Date(Date.UTC(fetchYear, fetchMonthNum - 1, 1))
+        const endDate = new Date(Date.UTC(fetchYear, fetchMonthNum, 0, 23, 59, 59, 999))
+        const res = await fetch(
+          `/api/attendance?employeeId=${employeeId}&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`
+        )
+        if (!res.ok) throw new Error("Failed to fetch attendance")
+        const data: AttendanceRecord[] = await res.json()
+        setAttendanceData(data)
+
+        const map: Record<string, AttendanceStatus> = {}
+        let present = 0
+        let onDuty = 0
+        let paid = 0
+        let unpaid = 0
+        let pending = 0
+
+        const [currentYear, currentMonth] = selectedMonth.split("-").map(Number)
+        const daysInMonth = new Date(currentYear, currentMonth, 0).getDate()
+        let workingDays = 0
+
+        data.forEach((record) => {
+          if (!record.date) return
+          const date = new Date(record.date)
+          if (isNaN(date.getTime())) return
+          const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+          const dateKey = localDate.toISOString().split("T")[0]
+          map[dateKey] = (record.status as AttendanceStatus) || "Absent"
+
+          if (record.status === "Present") {
+            present++
+          } else if (record.status === "On Duty") {
+            onDuty++
+          } else if (record.status === "Absent") {
+            if (record.isLeaveApproved === true) {
+              const isPaidLeave = record.isLeavePaid === true || record.isPaid === true
+              if (isPaidLeave) paid++
+              else unpaid++
+            } else {
+              pending++
+            }
+          }
+        })
+
+        for (let day = 1; day <= daysInMonth; day++) {
+          const date = new Date(Date.UTC(currentYear, currentMonth - 1, day))
+          if (date > new Date()) continue
+          const dayOfWeek = date.getUTCDay()
+          if (dayOfWeek === 0) continue // Sunday
+          workingDays++
+        }
+
+        setPresentDays(present)
+        setOnDutyDays(onDuty)
+        setPaidLeaveDays(paid)
+        setUnpaidLeaveDays(unpaid)
+        setPendingLeaveDays(pending)
+        setTotalWorkingDays(workingDays)
+        const effective = present + onDuty + paid
+        setAttendanceRate(workingDays > 0 ? Math.round((effective / workingDays) * 100) : 0)
+        setAttendanceMap(map)
+      } catch (e) {
+        console.error(e)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    if (employeeId && selectedMonth) {
+      fetchAttendance()
+    }
+  }, [employeeId, selectedMonth])
+
+  const months = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      return {
+        value: d.toISOString().slice(0, 7),
+        label: d.toLocaleString("default", { month: "long", year: "numeric" }),
+      }
+    })
+  }, [])
+
+  const [year, monthNum] = selectedMonth.split("-").map(Number)
+  const firstDay = new Date(Date.UTC(year, monthNum - 1, 1))
+  const lastDay = new Date(Date.UTC(year, monthNum, 0))
+  const daysInMonth = lastDay.getUTCDate()
+  const startDayIdx = firstDay.getUTCDay()
+  const selectedMonthLabel = months.find((m) => m.value === selectedMonth)?.label || selectedMonth
+
+  const leaveInfoMap = useMemo(() => {
+    const map: Record<string, { status: "paid" | "unpaid" | "pending"; reason?: string }> = {}
+    attendanceData.forEach((record) => {
+      if (record.status === "Absent" && record.date) {
+        const date = new Date(record.date)
+        const key = date.toISOString().split("T")[0]
+        if (record.isLeaveApproved === true) {
+          const isPaidLeave = record.isLeavePaid === true || record.isPaid === true
+          map[key] = { status: isPaidLeave ? "paid" : "unpaid", reason: record.leaveReason }
+        } else if (record.isLeaveApproved === undefined) {
+          map[key] = { status: "pending", reason: record.leaveReason }
+        }
+      }
+    })
+    return map
+  }, [attendanceData])
+
+  const calendarData = useMemo(() => {
+    const days: Array<{
+      date: number
+      isCurrentMonth: boolean
+      status?: AttendanceStatus
+      isFuture: boolean
+      isSunday: boolean
+      dateKey?: string
+      leaveInfo?: { status: "paid" | "unpaid" | "pending"; reason?: string }
+    }> = []
+
+    for (let i = 0; i < startDayIdx; i++) {
+      days.push({ date: 0, isCurrentMonth: false, isFuture: false, isSunday: false })
+    }
+
+    const today = new Date()
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(Date.UTC(year, monthNum - 1, d))
+      const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+      const dateKey = localDate.toISOString().split("T")[0]
+      const dayOfWeek = date.getUTCDay()
+      const isFuture = date > today
+      const isSunday = dayOfWeek === 0
+
+      days.push({
+        date: d,
+        isCurrentMonth: true,
+        status: attendanceMap[dateKey] || null,
+        isFuture,
+        isSunday,
+        dateKey,
+        leaveInfo: leaveInfoMap[dateKey],
+      })
+    }
+
+    while (days.length < 42) {
+      days.push({ date: 0, isCurrentMonth: false, isFuture: false, isSunday: false })
+    }
+
+    return days
+  }, [attendanceMap, leaveInfoMap, startDayIdx, daysInMonth, monthNum, year])
+
+  const totalSalary = (presentDays + paidLeaveDays + onDutyDays) * dailySalary
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-8">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-primary" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="w-full">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Attendance & Salary Details
+            </CardTitle>
+            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {months.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-col items-center text-center">
+                  <div className="text-3xl font-bold text-primary mb-1">{attendanceRate}%</div>
+                  <p className="text-sm text-muted-foreground">Attendance Rate</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-col items-center text-center">
+                  <div className="text-3xl font-bold text-green-600 flex items-center gap-1">
+                    <IndianRupee className="w-6 h-6" />
+                    {totalSalary.toLocaleString()}
+                  </div>
+                  <p className="text-sm text-muted-foreground">Total Salary</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <h4 className="font-medium flex items-center gap-2">
+                <Calculator className="w-4 h-4" />
+                Salary Breakdown
+              </h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Daily Rate:</span>
+                  <span className="font-medium">₹{dailySalary.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Present Days:</span>
+                  <span className="font-medium">{presentDays} days</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">On Duty (Paid):</span>
+                  <span className="font-medium text-blue-600">+{onDutyDays} days</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Paid Leave:</span>
+                  <span className="font-medium text-green-600">+{paidLeaveDays} days</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Unpaid Leave:</span>
+                  <span className="font-medium text-amber-600">{unpaidLeaveDays} days</span>
+                </div>
+                {pendingLeaveDays > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Pending Approval:</span>
+                    <span className="font-medium text-purple-600">{pendingLeaveDays} days</span>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Working Days:</span>
+                  <span className="font-medium">{totalWorkingDays} days</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-semibold">
+                  <span>Monthly Earnings:</span>
+                  <div className="text-right">
+                    <div className="text-green-600">₹{totalSalary.toLocaleString()}</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-4">
+            <div>
+              <h4 className="font-medium mb-3 flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                {selectedMonthLabel} Calendar
+              </h4>
+              <div className="grid grid-cols-7 gap-1 mb-2 text-xs text-center font-medium text-muted-foreground">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                  <div key={d} className="p-2">
+                    {d}
+                  </div>
+                ))}
+              </div>
+              <TooltipProvider>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarData.map((day, idx) => {
+                    let className = "aspect-square p-2 text-sm rounded-md flex items-center justify-center border"
+                    let tooltip = ""
+
+                    if (!day.isCurrentMonth) {
+                      className += " text-muted-foreground/50"
+                    } else if (day.isSunday) {
+                      className += " bg-gray-50 text-gray-400"
+                      tooltip = "Sunday (Holiday)"
+                    } else if (day.isFuture) {
+                      className += " bg-background text-muted-foreground"
+                      tooltip = "Future date"
+                    } else if (day.status === "Present") {
+                      className += " bg-green-100 text-green-800 font-medium border-green-200"
+                      tooltip = "Present"
+                    } else if (day.status === "On Duty") {
+                      className += " bg-blue-100 text-blue-800 font-medium border-blue-200"
+                      tooltip = "On Duty (Paid)"
+                    } else if (day.status === "Absent" && day.leaveInfo) {
+                      if (day.leaveInfo.status === "paid") {
+                        className += " bg-purple-100 text-purple-800 font-medium border-purple-200"
+                        tooltip = "Paid Leave"
+                      } else if (day.leaveInfo.status === "unpaid") {
+                        className += " bg-amber-100 text-amber-800 font-medium border-amber-200"
+                        tooltip = "Unpaid Leave"
+                      } else {
+                        className += " bg-gray-100 text-gray-800 font-medium border-gray-200"
+                        tooltip = "Leave Pending Approval"
+                      }
+                    } else if (day.status === "Absent") {
+                      className += " bg-red-100 text-red-800 font-medium border-red-200"
+                      tooltip = "Absent (No Leave)"
+                    } else {
+                      className += " bg-background hover:bg-muted/50"
+                      tooltip = "No attendance record"
+                    }
+
+                    const cell = (
+                      <div className={className} key={idx}>
+                        {day.isCurrentMonth ? day.date : ""}
+                        {day.isCurrentMonth && !day.status && !day.isFuture && !day.isSunday && (
+                          <HelpCircle className="w-2 h-2 ml-1 text-muted-foreground" />
+                        )}
+                      </div>
+                    )
+
+                    return day.isCurrentMonth && tooltip ? (
+                      <Tooltip key={idx}>
+                        <TooltipTrigger asChild>{cell}</TooltipTrigger>
+                        <TooltipContent className="max-w-xs p-3 space-y-1">
+                          <div className="font-medium">{tooltip.split("\n")[0]}</div>
+                          {day.leaveInfo?.reason && (
+                            <div className="text-sm text-muted-foreground pt-1 border-t mt-1">
+                              <p className="font-medium">Reason:</p>
+                              <p className="whitespace-pre-wrap">{day.leaveInfo.reason}</p>
+                            </div>
+                          )}
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <div key={idx}>{cell}</div>
+                    )
+                  })}
+                </div>
+              </TooltipProvider>
+
+              <div className="flex justify-center gap-4 mt-4 text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-green-100 border-green-200 border rounded" />
+                  <span className="text-muted-foreground">Present</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-red-100 border-red-200 border rounded" />
+                  <span className="text-muted-foreground">Absent</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-background border rounded" />
+                  <span className="text-muted-foreground">No Record</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 bg-gray-50 border rounded" />
+                  <span className="text-muted-foreground">Holiday</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 interface Employee {
   _id: string
@@ -79,7 +507,6 @@ interface Employee {
   address: string
   avatar?: string
   department?: string
-
   supervisor?: string
   skills?: string[]
   createdAt: string
@@ -88,14 +515,14 @@ interface Employee {
     present: boolean
     checkIn?: string
     checkOut?: string
-    status?: "Present" | "Absent" | "Late" | "Half Day"
+    status?: AttendanceStatus
   }
 }
 
 export default function EmployeesManagement() {
+  const { toast } = useToast()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [searchTerm, setSearchTerm] = useState("")
-  // Removed employment status filter per request
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [loading, setLoading] = useState(true)
@@ -113,13 +540,12 @@ export default function EmployeesManagement() {
   const roundToHalf = (n: number) => Math.round((n ?? 0) * 2) / 2
   const clampShift = (n: number) => Math.max(0, Math.min(3, roundToHalf(n)))
   const getShiftCount = (id: string) => clampShift(shiftsToday[id] ?? 0)
-  const setShiftCount = (id: string, val: number) =>
-    setShiftsToday((prev) => ({ ...prev, [id]: clampShift(val) }))
+  const setShiftCount = (id: string, val: number) => setShiftsToday((prev) => ({ ...prev, [id]: clampShift(val) }))
   const calcTodaysPay = (emp: Employee) => getShiftCount(emp._id) * (emp.salary || 0)
 
   // INR currency formatter
   const formatINR = (val: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val || 0)
+    new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(val || 0)
 
   const getTodayDateStr = () => {
     const today = new Date()
@@ -127,6 +553,156 @@ export default function EmployeesManagement() {
     const mm = String(today.getMonth() + 1).padStart(2, "0")
     const dd = String(today.getDate()).padStart(2, "0")
     return `${yyyy}-${mm}-${dd}`
+  }
+
+  const handleAttendanceChange = async (
+    employeeId: string,
+    status: AttendanceStatus,
+    dateStr: string = getTodayDateStr(),
+    leaveReason: string | null = null,
+    isPaid = true,
+  ) => {
+    const employee = employees.find((x) => x._id === employeeId)
+    if (!employee) {
+      toast({
+        title: "Error",
+        description: "Employee not found",
+        variant: "destructive",
+      })
+      return false
+    }
+
+    // Only allow attendance setting for monthly employees
+    if (employee.workType !== "Monthly") {
+      toast({
+        title: "Error",
+        description: "Attendance setting is only available for monthly employees",
+        variant: "destructive",
+      })
+      return false
+    }
+
+    try {
+      const now = new Date()
+      const timestamp = now.toISOString()
+
+      const response = await fetch("/api/attendance/monthly-employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          employeeId,
+          date: dateStr,
+          status,
+          leaveReason,
+          isPaid,
+          timestamp,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        // Update local state optimistically
+        setEmployees((prev) =>
+          prev.map((emp) =>
+            emp._id === employeeId
+              ? {
+                  ...emp,
+                  attendance: {
+                    ...emp.attendance,
+                    status,
+                    checkIn: status === "Present" || status === "On Duty" ? timestamp : emp.attendance?.checkIn,
+                    present: status === "Present" || status === "On Duty",
+                  },
+                }
+              : emp,
+          ),
+        )
+
+        toast({
+          title: "Success",
+          description: data.message || `${employee.name}'s attendance updated to ${status}`,
+        })
+        return true
+      } else {
+        toast({
+          title: "Error",
+          description: data.message || "Failed to update attendance",
+          variant: "destructive",
+        })
+        return false
+      }
+    } catch (error) {
+      console.error("Error updating attendance:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update attendance. Please try again.",
+        variant: "destructive",
+      })
+      return false
+    }
+  }
+
+  const fetchAttendanceRealtime = async () => {
+    try {
+      const today = getTodayDateStr()
+      const res = await fetch(`/api/attendance/monthly-employees?date=${today}`, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok || !body?.success) {
+        if (res.status === 401) {
+          toast({
+            title: "Error",
+            description: "Unauthorized. Please sign in to view live attendance.",
+            variant: "destructive",
+          })
+        } else {
+          toast({
+            title: "Error",
+            description: body?.message || "Failed to fetch attendance.",
+            variant: "destructive",
+          })
+        }
+        return
+      }
+
+      const records: AttendanceRecord[] = body.data || []
+      const attMap = new Map<string, AttendanceRecord>()
+      for (const rec of records) {
+        const eid =
+          typeof rec.employeeId === "string" ? rec.employeeId : (rec.employeeId as any)?._id || String(rec.employeeId)
+        if (!eid) continue
+        attMap.set(String(eid), rec)
+      }
+
+      setEmployees((prev) =>
+        prev.map((emp) => {
+          if (emp.workType !== "Monthly") return emp
+          const att = attMap.get(emp._id)
+          if (!att) {
+            return {
+              ...emp,
+              attendance: emp.attendance?.status ? emp.attendance : { present: false, status: null },
+            }
+          }
+          const statusNorm = normalizeAttendanceStatus((att as any).status, (att as any).present)
+          return {
+            ...emp,
+            attendance: {
+              ...emp.attendance,
+              status: statusNorm,
+              checkIn: att.checkIn || emp.attendance?.checkIn,
+              checkOut: att.checkOut || emp.attendance?.checkOut,
+              present: statusNorm === "Present" || statusNorm === "On Duty",
+            },
+          }
+        }),
+      )
+    } catch (err) {
+      console.error("Error fetching live attendance:", err)
+    }
   }
 
   const fetchEmployeeShifts = async () => {
@@ -138,21 +714,21 @@ export default function EmployeesManagement() {
       const map: Record<string, number> = {}
       for (const d of docs) {
         // d.employeeId may be object when populated; handle both
-        const id = typeof (d as any).employeeId === 'object' ? (d as any).employeeId._id : d.employeeId
+        const id = typeof (d as any).employeeId === "object" ? (d as any).employeeId._id : d.employeeId
         map[id] = clampShift((d as any).shifts ?? 0)
       }
       setShiftsToday((prev) => ({ ...prev, ...map }))
     } catch (e) {
-      console.error('Failed to fetch employee shifts', e)
+      console.error("Failed to fetch employee shifts", e)
     }
   }
 
   const saveEmployeeShift = async (emp: Employee, count: number) => {
     try {
       const dateStr = getTodayDateStr()
-      await fetch('/api/employee-shifts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      await fetch("/api/employee-shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           employeeId: emp._id,
           date: dateStr,
@@ -161,8 +737,12 @@ export default function EmployeesManagement() {
         }),
       })
     } catch (e) {
-      console.error('Failed to save shift', e)
-      toast.error('Failed to save shift count')
+      console.error("Failed to save shift", e)
+      toast({
+        title: "Error",
+        description: "Failed to save shift count",
+        variant: "destructive",
+      })
     }
   }
 
@@ -195,9 +775,23 @@ export default function EmployeesManagement() {
     "Concrete Worker",
   ]
 
+
+
   useEffect(() => {
     fetchEmployees()
     fetchEmployeeShifts()
+  }, [])
+
+  useEffect(() => {
+    let interval: any
+    const init = async () => {
+      await fetchAttendanceRealtime()
+      interval = setInterval(fetchAttendanceRealtime, 15000)
+    }
+    init()
+    return () => {
+      if (interval) clearInterval(interval)
+    }
   }, [])
 
   const fetchEmployees = async () => {
@@ -207,9 +801,15 @@ export default function EmployeesManagement() {
       setEmployees(employees)
       // Load today's shifts after employees are loaded
       await fetchEmployeeShifts()
+      // Initial attendance sync right after employees load
+      await fetchAttendanceRealtime()
     } catch (error) {
       console.error("Error fetching employees:", error)
-      toast.error("Failed to load employees. Please try again.")
+      toast({
+        title: "Error",
+        description: "Failed to load employees. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
@@ -255,7 +855,11 @@ export default function EmployeesManagement() {
       setEmployeePerformance(mockPerformance)
     } catch (error) {
       console.error("Error fetching performance:", error)
-      toast.error("Failed to load performance data")
+      toast({
+        title: "Error",
+        description: "Failed to load performance data",
+        variant: "destructive",
+      })
     } finally {
       setIsLoadingPerformance(false)
     }
@@ -294,29 +898,49 @@ export default function EmployeesManagement() {
 
     // Required field validations
     if (!formData.name?.trim()) {
-      toast.error("Name is required")
+      toast({
+        title: "Error",
+        description: "Name is required",
+        variant: "destructive",
+      })
       return
     }
 
     if (!formData.phone?.trim()) {
-      toast.error("Phone number is required")
+      toast({
+        title: "Error",
+        description: "Phone number is required",
+        variant: "destructive",
+      })
       return
     }
 
     // Phone number validation (basic international format)
-    const phoneRegex = /^[+]?[\s\-\(\)0-9]*$/
-    if (!phoneRegex.test(formData.phone) || formData.phone.replace(/[^0-9]/g, '').length < 8) {
-      toast.error("Please enter a valid phone number")
+    const phoneRegex = /^[+]?[\s\-()0-9]*$/
+    if (!phoneRegex.test(formData.phone) || formData.phone.replace(/[^0-9]/g, "").length < 8) {
+      toast({
+        title: "Error",
+        description: "Please enter a valid phone number",
+        variant: "destructive",
+      })
       return
     }
 
     if (!formData.address?.trim()) {
-      toast.error("Address is required")
+      toast({
+        title: "Error",
+        description: "Address is required",
+        variant: "destructive",
+      })
       return
     }
 
     if (isNaN(formData.salary) || formData.salary < 0) {
-      toast.error("Please enter a valid salary amount")
+      toast({
+        title: "Error",
+        description: "Please enter a valid salary amount",
+        variant: "destructive",
+      })
       return
     }
 
@@ -339,9 +963,12 @@ export default function EmployeesManagement() {
         setIsAddDialogOpen(false)
         setEditingEmployee(null)
         resetForm()
-        toast.success(`${formData.name} has been ${editingEmployee ? "updated" : "added"} successfully.`)
+        toast({
+          title: "Success",
+          description: `${formData.name} has been ${editingEmployee ? "updated" : "added"} successfully.`,
+        })
       } else {
-        let errorMessage = `Failed to ${editingEmployee ? 'update' : 'create'} employee`
+        let errorMessage = `Failed to ${editingEmployee ? "update" : "create"} employee`
         let details: any = null
 
         try {
@@ -355,29 +982,29 @@ export default function EmployeesManagement() {
           errorMessage += ` (HTTP ${response.status})`
         }
 
-        toast.error(errorMessage, {
-          duration: 5000,
-          action: {
-            label: 'Dismiss',
-            onClick: () => { }
-          }
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
         })
 
-        console.error('Employee save failed:', {
+        console.error("Employee save failed:", {
           status: response.status,
           details,
-          formData: { ...formData, password: '*****' } // Don't log actual password
+          formData: { ...formData, password: "*****" }, // Don't log actual password
         })
       }
     } catch (error) {
       console.error("Error saving employee:", error)
-      toast.error("Failed to save employee. Please try again.")
+      toast({
+        title: "Error",
+        description: "Failed to save employee. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setLoading(false)
     }
   }
-
-  // No attendance updates for employees: using shift-based work instead
 
   const handleDelete = async (id: string) => {
     try {
@@ -387,11 +1014,18 @@ export default function EmployeesManagement() {
         if (selectedEmployee?._id === id) {
           closeEmployeeDetail()
         }
-        toast.success("Employee has been removed successfully.")
+        toast({
+          title: "Success",
+          description: "Employee has been removed successfully.",
+        })
       }
     } catch (error) {
       console.error("Error deleting employee:", error)
-      toast.error("Failed to delete employee. Please try again.")
+      toast({
+        title: "Error",
+        description: "Failed to delete employee. Please try again.",
+        variant: "destructive",
+      })
     }
   }
 
@@ -436,8 +1070,6 @@ export default function EmployeesManagement() {
     )
   })
 
-  // Employment status badge removed; no color mapping needed
-
   // Calculate statistics (shift-based)
   const totalEmployees = employees.length
   const totalShiftsToday = employees.reduce((sum, e) => sum + getShiftCount(e._id), 0)
@@ -476,7 +1108,58 @@ export default function EmployeesManagement() {
                 </Avatar>
                 <div>
                   <h3 className="font-semibold text-lg">{employee.name}</h3>
-                  {employee.workType === 'Daily' && (
+                  {employee.workType === "Monthly" && (
+                    <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                      <Select
+                        value={employee.attendance?.status ?? undefined}
+                        onValueChange={(value) => {
+                          if (value === "Present" || value === "Absent" || value === "On Duty") {
+                            handleAttendanceChange(employee._id, value as AttendanceStatus)
+                          }
+                        }}
+                      >
+                        <SelectTrigger
+                          className={cn(
+                            "h-7 w-40",
+                            employee.attendance?.status === "Present" && "bg-green-100 border-green-200",
+                            employee.attendance?.status === "On Duty" && "bg-blue-100 border-blue-200",
+                            employee.attendance?.status === "Absent" && "bg-red-100 border-red-200",
+                            !employee.attendance?.status && "bg-gray-50 border-gray-200",
+                          )}
+                        >
+                          <div className="flex items-center gap-1">
+                            {employee.attendance?.status ? (
+                              <>
+                                {employee.attendance.status === "Present" && (
+                                  <CheckCircle className="w-3 h-3 text-green-600" />
+                                )}
+                                {employee.attendance.status === "On Duty" && (
+                                  <Briefcase className="w-3 h-3 text-blue-600" />
+                                )}
+                                {employee.attendance.status === "Absent" && (
+                                  <XCircle className="w-3 h-3 text-red-600" />
+                                )}
+                                <span className="text-sm font-medium">{employee.attendance.status}</span>
+                              </>
+                            ) : (
+                              <SelectValue placeholder="Set Status" />
+                            )}
+                          </div>
+                        </SelectTrigger>
+                        <SelectContent>
+                          {attendanceOptions.map(({ value, label, icon: Icon }) => (
+                            <SelectItem key={value} value={value}>
+                              <div className="flex items-center gap-2">
+                                <Icon className="w-3 h-3" />
+                                {label}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {employee.workType === "Daily" && (
                     <div className="flex items-center gap-2 mt-1" onClick={(e) => e.stopPropagation()}>
                       <Label className="text-xs">Shifts Today (0–3, 0.5-step)</Label>
                       <Select
@@ -504,7 +1187,6 @@ export default function EmployeesManagement() {
                   )}
                 </div>
               </div>
-              {/* Status badge removed */}
             </div>
             <div className="space-y-2 mb-4">
               <div className="flex items-center gap-2 text-sm">
@@ -530,7 +1212,8 @@ export default function EmployeesManagement() {
               <div className="flex items-center gap-2 text-sm">
                 <DollarSign className="w-4 h-4 text-muted-foreground" />
                 <span>
-                  {employee.workType === "Daily" ? "Per Shift: " : "Salary: "}{formatINR(employee.salary)}
+                  {employee.workType === "Daily" ? "Per Shift: " : "Salary: "}
+                  {formatINR(employee.salary)}
                 </span>
               </div>
               <div className="flex items-center gap-2 text-sm">
@@ -616,7 +1299,7 @@ export default function EmployeesManagement() {
               <TableHead>Role</TableHead>
               <TableHead>Work Type</TableHead>
               <TableHead>Per-Shift/Salary</TableHead>
-              <TableHead>Shifts Today</TableHead>
+              <TableHead>Attendance/Shifts</TableHead>
               <TableHead>Today's Pay</TableHead>
               <TableHead>Contact</TableHead>
               <TableHead>Actions</TableHead>
@@ -654,31 +1337,75 @@ export default function EmployeesManagement() {
                 </TableCell>
                 <TableCell>{employee.workType}</TableCell>
                 <TableCell>
-                  {employee.workType === "Daily" ? "Per Shift: " : ""}{formatINR(employee.salary)}
+                  {employee.workType === "Daily" ? "Per Shift: " : ""}
+                  {formatINR(employee.salary)}
                 </TableCell>
-                {/* Status column removed */}
                 <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Select
-                    value={String(getShiftCount(employee._id))}
-                    onValueChange={(val) => {
-                      const num = Number(val)
-                      setShiftCount(employee._id, num)
-                      saveEmployeeShift(employee, num)
-                    }}
-                  >
-                    <SelectTrigger className="h-8 w-24 px-2 py-1">
-                      <SelectValue placeholder="0" />
-                    </SelectTrigger>
-                    <SelectContent align="start">
-                      <SelectItem value="0">0</SelectItem>
-                      <SelectItem value="0.5">0.5</SelectItem>
-                      <SelectItem value="1">1</SelectItem>
-                      <SelectItem value="1.5">1.5</SelectItem>
-                      <SelectItem value="2">2</SelectItem>
-                      <SelectItem value="2.5">2.5</SelectItem>
-                      <SelectItem value="3">3</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {employee.workType === "Monthly" ? (
+                    <Select
+                      value={employee.attendance?.status ?? undefined}
+                      onValueChange={(value) => handleAttendanceChange(employee._id, value as AttendanceStatus)}
+                    >
+                      <SelectTrigger
+                        className={cn(
+                          "h-7 w-40",
+                          employee.attendance?.status === "Present" && "bg-green-100 border-green-200",
+                          employee.attendance?.status === "On Duty" && "bg-blue-100 border-blue-200",
+                          employee.attendance?.status === "Absent" && "bg-red-100 border-red-200",
+                          !employee.attendance?.status && "bg-gray-50 border-gray-200",
+                        )}
+                      >
+                        <div className="flex items-center gap-1">
+                          {employee.attendance?.status ? (
+                            <>
+                              {employee.attendance.status === "Present" && (
+                                <CheckCircle className="w-3 h-3 text-green-600" />
+                              )}
+                              {employee.attendance.status === "On Duty" && (
+                                <Briefcase className="w-3 h-3 text-blue-600" />
+                              )}
+                              {employee.attendance.status === "Absent" && <XCircle className="w-3 h-3 text-red-600" />}
+                              <span className="text-sm font-medium">{employee.attendance.status}</span>
+                            </>
+                          ) : (
+                            <SelectValue placeholder="Set Status" />
+                          )}
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {attendanceOptions.map(({ value, label, icon: Icon }) => (
+                          <SelectItem key={value} value={value}>
+                            <div className="flex items-center gap-2">
+                              <Icon className="w-3 h-3" />
+                              {label}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Select
+                      value={String(getShiftCount(employee._id))}
+                      onValueChange={(val) => {
+                        const num = Number(val)
+                        setShiftCount(employee._id, num)
+                        saveEmployeeShift(employee, num)
+                      }}
+                    >
+                      <SelectTrigger className="h-8 w-24 px-2 py-1">
+                        <SelectValue placeholder="0" />
+                      </SelectTrigger>
+                      <SelectContent align="start">
+                        <SelectItem value="0">0</SelectItem>
+                        <SelectItem value="0.5">0.5</SelectItem>
+                        <SelectItem value="1">1</SelectItem>
+                        <SelectItem value="1.5">1.5</SelectItem>
+                        <SelectItem value="2">2</SelectItem>
+                        <SelectItem value="2.5">2.5</SelectItem>
+                        <SelectItem value="3">3</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </TableCell>
                 <TableCell>{formatINR(calcTodaysPay(employee))}</TableCell>
                 <TableCell>
@@ -761,9 +1488,7 @@ export default function EmployeesManagement() {
             <IndianRupee className="h-5 w-5 sm:h-4 sm:w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-lg sm:text-2xl font-bold text-green-600">
-              {formatINR(totalSalaryToday)}
-            </div>
+            <div className="text-lg sm:text-2xl font-bold text-green-600">{formatINR(totalSalaryToday)}</div>
             <p className="text-sm sm:text-xs text-muted-foreground">Daily shifts total</p>
           </CardContent>
         </Card>
@@ -774,9 +1499,9 @@ export default function EmployeesManagement() {
           </CardHeader>
           <CardContent>
             <div className="text-lg sm:text-2xl font-bold text-teal-600">
-              {formatINR(employees
-                .filter(e => e.workType === 'Monthly')
-                .reduce((sum, emp) => sum + (emp.salary || 0), 0))}
+              {formatINR(
+                employees.filter((e) => e.workType === "Monthly").reduce((sum, emp) => sum + (emp.salary || 0), 0),
+              )}
             </div>
             <p className="text-sm sm:text-xs text-muted-foreground">Monthly staff total</p>
           </CardContent>
@@ -901,25 +1626,22 @@ export default function EmployeesManagement() {
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="salary">
-                    {formData.workType === "Daily" ? "Per Shift Salary *" : "Salary *"}
-                  </Label>
+                  <Label htmlFor="salary">{formData.workType === "Daily" ? "Per Shift Salary *" : "Salary *"}</Label>
                   <Input
                     id="salary"
                     type="number"
                     value={formData.salary === 0 ? "" : formData.salary}
                     onChange={(e) => {
-                      const value = e.target.value;
+                      const value = e.target.value
                       setFormData({
                         ...formData,
-                        salary: value === "" ? 0 : Number.parseInt(value, 10) || 0
-                      });
+                        salary: value === "" ? 0 : Number.parseInt(value, 10) || 0,
+                      })
                     }}
                     placeholder={formData.workType === "Daily" ? "e.g., 1500 (per shift)" : "e.g., 450"}
                     required
                     className="sm:col-span-2 text-center h-9 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
                   />
-
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -968,9 +1690,6 @@ export default function EmployeesManagement() {
                   </Popover>
                 </div>
               </div>
-              {false && (
-                <div />
-              )}
               <div className="space-y-2">
                 <Label htmlFor="address">Address</Label>
                 <Textarea
@@ -1047,9 +1766,7 @@ export default function EmployeesManagement() {
           <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
           <h3 className="text-lg font-medium mb-2">No employees found</h3>
           <p className="text-muted-foreground mb-4">
-            {searchTerm
-              ? "Try adjusting your search or filter criteria"
-              : "Get started by adding your first employee"}
+            {searchTerm ? "Try adjusting your search or filter criteria" : "Get started by adding your first employee"}
           </p>
           {!searchTerm && (
             <Button onClick={() => setIsAddDialogOpen(true)}>
@@ -1100,14 +1817,11 @@ export default function EmployeesManagement() {
               <Tabs defaultValue="overview" className="mt-6 flex flex-col h-[calc(100%-100px)]">
                 <TabsList className="grid w-full grid-cols-1 mb-4">
                   <TabsTrigger value="overview">Overview</TabsTrigger>
-                  {/* <TabsTrigger value="performance">Performance</TabsTrigger> */}
-                  {/* <TabsTrigger value="projects">Projects</TabsTrigger> */}
                 </TabsList>
 
                 <TabsContent value="overview" className="flex-1 overflow-y-auto pr-2 space-y-6">
                   {/* Quick Stats */}
                   <div className="grid grid-cols-1 gap-4">
-
                     <Card>
                       <CardContent className="p-4 space-y-1">
                         <div className="flex items-center gap-2">
@@ -1123,15 +1837,28 @@ export default function EmployeesManagement() {
                         </div>
                         <div className="flex items-center gap-2">
                           <Clock className="w-4 h-4 text-muted-foreground" />
-                          <p className="text-xs text-muted-foreground">Shifts Today: {getShiftCount(selectedEmployee._id)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Shifts Today: {getShiftCount(selectedEmployee._id)}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2">
                           <IndianRupee className="w-4 h-4 text-green-600" />
-                          <p className="text-xs text-green-700">Today's Pay: {formatINR(calcTodaysPay(selectedEmployee))}</p>
+                          <p className="text-xs text-green-700">
+                            Today's Pay: {formatINR(calcTodaysPay(selectedEmployee))}
+                          </p>
                         </div>
                       </CardContent>
                     </Card>
                   </div>
+
+                   {/* Combined Attendance View for Monthly Employees */}
+                   {selectedEmployee.workType === "Monthly" && (
+                    <CombinedAttendanceView
+                      employeeId={selectedEmployee._id}
+                      dailySalary={selectedEmployee.salary}
+                      initialMonth={new Date().toISOString().slice(0, 7)}
+                    />
+                  )}
 
                   {/* Personal Information */}
                   <Card>
@@ -1170,8 +1897,13 @@ export default function EmployeesManagement() {
                               <Button
                                 variant="outline"
                                 size="icon"
-                                className="h-7 w-7"
-                                onClick={() => window.open(`https://wa.me/${selectedEmployee.phone.replace(/[^0-9]/g, "")}`, "_blank")}
+                                className="h-7 w-7 bg-transparent"
+                                onClick={() =>
+                                  window.open(
+                                    `https://wa.me/${selectedEmployee.phone.replace(/[^0-9]/g, "")}`,
+                                    "_blank",
+                                  )
+                                }
                                 title="WhatsApp"
                               >
                                 <MessageCircle className="w-4 h-4" />
@@ -1194,7 +1926,7 @@ export default function EmployeesManagement() {
                             <p className="font-medium">Role</p>
                             <p className="text-sm text-muted-foreground">
                               {selectedEmployee.role}
-                              {selectedEmployee.department ? ` — ${selectedEmployee.department}` : ''}
+                              {selectedEmployee.department ? ` — ${selectedEmployee.department}` : ""}
                             </p>
                           </div>
                         </div>
@@ -1210,7 +1942,9 @@ export default function EmployeesManagement() {
                         <div className="flex items-center gap-3">
                           <IndianRupee className="w-5 h-5 text-muted-foreground" />
                           <div>
-                            <p className="font-medium">{selectedEmployee.workType === 'Daily' ? 'Per Shift' : 'Salary'}</p>
+                            <p className="font-medium">
+                              {selectedEmployee.workType === "Daily" ? "Per Shift" : "Salary"}
+                            </p>
                             <p className="text-sm text-muted-foreground">{formatINR(selectedEmployee.salary)}</p>
                           </div>
                         </div>
@@ -1218,7 +1952,9 @@ export default function EmployeesManagement() {
                           <Calendar className="w-5 h-5 text-muted-foreground" />
                           <div>
                             <p className="font-medium">Joined</p>
-                            <p className="text-sm text-muted-foreground">{format(new Date(selectedEmployee.joinDate), 'PPP')}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {format(new Date(selectedEmployee.joinDate), "PPP")}
+                            </p>
                           </div>
                         </div>
                         {selectedEmployee.endDate && (
@@ -1226,7 +1962,9 @@ export default function EmployeesManagement() {
                             <CalendarDays className="w-5 h-5 text-muted-foreground" />
                             <div>
                               <p className="font-medium">End Date</p>
-                              <p className="text-sm text-muted-foreground">{format(new Date(selectedEmployee.endDate), 'PPP')}</p>
+                              <p className="text-sm text-muted-foreground">
+                                {format(new Date(selectedEmployee.endDate), "PPP")}
+                              </p>
                             </div>
                           </div>
                         )}
@@ -1248,56 +1986,16 @@ export default function EmployeesManagement() {
                             </Badge>
                           ))}
                           {selectedEmployee.skills.length > 6 && (
-                            <Badge variant="outline" className="text-xs">+{selectedEmployee.skills.length - 6} more</Badge>
+                            <Badge variant="outline" className="text-xs">
+                              +{selectedEmployee.skills.length - 6} more
+                            </Badge>
                           )}
                         </div>
                       </CardContent>
                     </Card>
                   )}
-                </TabsContent>
-                <TabsContent value="projects" className="flex-1 overflow-y-auto pr-2 space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-semibold">Project History</h3>
-                  </div>
-                  <div className="space-y-3">
-                    {employeeProjects.length > 0 ? (
-                      employeeProjects.map((project) => (
-                        <Card key={project.id} className="hover:shadow-md transition-shadow">
-                          <CardContent className="p-4">
-                            <div className="flex justify-between items-start mb-2">
-                              <h4 className="font-medium">{project.title}</h4>
-                              <Badge
-                                className={
-                                  project.status === "Completed"
-                                    ? "bg-green-100 text-green-800"
-                                    : "bg-blue-100 text-blue-800"
-                                }
-                                variant="secondary"
-                              >
-                                {project.status}
-                              </Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground mb-3">Role: {project.role}</p>
-                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                              <div className="flex items-center gap-1">
-                                <CalendarDays className="w-3 h-3" />
-                                <span>Start: {format(new Date(project.startDate), "MMM dd, yyyy")}</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <CalendarDays className="w-3 h-3" />
-                                <span>End: {format(new Date(project.endDate), "MMM dd, yyyy")}</span>
-                              </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))
-                    ) : (
-                      <div className="text-center py-8">
-                        <FileText className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                        <p className="text-muted-foreground">No projects assigned yet</p>
-                      </div>
-                    )}
-                  </div>
+
+                 
                 </TabsContent>
               </Tabs>
             </div>
@@ -1307,3 +2005,4 @@ export default function EmployeesManagement() {
     </div>
   )
 }
+

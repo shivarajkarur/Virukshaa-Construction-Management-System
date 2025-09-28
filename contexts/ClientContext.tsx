@@ -46,6 +46,13 @@ export function ClientProvider({ children }: { children: ReactNode }) {
           const response = await fetch(`/api/clients/email/${encodeURIComponent(session.user.email)}`);
           
           if (!response.ok) {
+            // Handle 404 (Client not found) as a normal case, not an error
+            if (response.status === 404) {
+              setClient(null);
+              setError(null); // Clear any previous errors
+              return;
+            }
+            
             const errorData = await response.json().catch(() => ({}));
             throw new Error(errorData.message || 'Failed to fetch client data');
           }

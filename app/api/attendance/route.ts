@@ -6,63 +6,77 @@ import Attendance from "@/models/Attendance";
 export async function POST(req: NextRequest) {
   await connectToDB();
   try {
-    const { 
-      supervisorId, 
-      employeeId, 
-      date, 
-      status, 
-      leaveReason, 
-      isLeaveApproved, 
-      isLeavePaid 
-    } = await req.json();
+    const { employeeId, supervisorId, date, status, leaveReason = null, isPaid = true } = await req.json();
 
-    if ((!supervisorId && !employeeId) || !date || !status) {
-      return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
+    if ((!employeeId && !supervisorId) || !date || !status) {
+      return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
 
-    // Use the start of the day in UTC for consistency
+    // Convert date string to Date object
     const attendanceDate = new Date(date);
     attendanceDate.setUTCHours(0, 0, 0, 0);
 
+    // Resolve subject (employee or supervisor) and prepare filter
     let filter: any = { date: attendanceDate };
+    let processedBy: any = undefined;
+
     if (employeeId) {
-      filter.employeeId = employeeId;
-    } else {
-      filter.supervisorId = supervisorId;
+      const Employee = (await import('@/models/EmployeeModel')).default;
+      const employee = await Employee.findById(employeeId);
+      if (!employee) {
+        return NextResponse.json({ success: false, message: "Employee not found" }, { status: 404 });
+      }
+      filter.employeeId = employee._id;
+      processedBy = employeeId;
+    } else if (supervisorId) {
+      const Supervisor = (await import('@/models/Supervisor')).default;
+      const supervisor = await Supervisor.findById(supervisorId);
+      if (!supervisor) {
+        return NextResponse.json({ success: false, message: "Supervisor not found" }, { status: 404 });
+      }
+      filter.supervisorId = supervisor._id;
+      processedBy = supervisorId;
     }
 
-    // Prepare update object with all possible fields
-    const updateObj: any = { 
+    // Prepare the update object
+    const updateObj: any = {
       status,
-      updatedAt: new Date()
+      updatedAt: new Date(),
+      processedAt: new Date(),
+      processedBy,
     };
 
-    // Only update leave-related fields if they are provided
-    if (leaveReason !== undefined) updateObj.leaveReason = leaveReason;
-    if (isLeaveApproved !== undefined) updateObj.isLeaveApproved = isLeaveApproved;
-    if (isLeavePaid !== undefined) updateObj.isLeavePaid = isLeavePaid;
+    // Handle leave reason and payment status if provided
+    if (leaveReason !== undefined) {
+      updateObj.leaveReason = leaveReason;
+    }
 
-    // If marking as absent without leave approval, ensure leave fields are cleared
-    if (status === 'Absent' && isLeaveApproved === false) {
-      updateObj.leaveReason = '';
+    // Handle payment status based on leave type
+    if (status === 'Absent') {
+      updateObj.isLeaveApproved = leaveReason ? true : false;
+      updateObj.isLeavePaid = leaveReason ? isPaid : false;
+    } else {
+      // For present/on-duty, clear leave-related fields
+      updateObj.isLeaveApproved = false;
       updateObj.isLeavePaid = false;
+      updateObj.leaveReason = '';
     }
 
     const attendance = await Attendance.findOneAndUpdate(
       filter,
       updateObj,
-      { 
-        upsert: true, 
-        new: true, 
+      {
+        upsert: true,
+        new: true,
         setDefaultsOnInsert: true,
-        runValidators: true
+        runValidators: true,
       }
     );
 
-    return NextResponse.json(attendance, { status: 201 });
+    return NextResponse.json({ success: true, message: "Attendance marked successfully", data: attendance }, { status: 201 });
   } catch (error) {
     console.error("Error marking attendance:", error);
-    return NextResponse.json({ message: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json({ success: false, message: "Internal Server Error" }, { status: 500 });
   }
 }
 
