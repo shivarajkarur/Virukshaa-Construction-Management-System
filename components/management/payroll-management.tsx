@@ -1602,7 +1602,7 @@ const PayrollManagement = () => {
         </div>
 
         <div className="flex gap-2">
-          <Button
+          {/* <Button
             variant="outline"
             size="sm"
             className="h-8 gap-1 bg-transparent"
@@ -1610,7 +1610,7 @@ const PayrollManagement = () => {
           >
             <Plus className="h-3.5 w-3.5" />
             <span className="sr-only sm:not-sr-only sm:whitespace-nowrap">Add Payment</span>
-          </Button>
+          </Button> */}
           <Button
             variant="outline"
             size="sm"
@@ -2210,7 +2210,7 @@ const PayrollManagement = () => {
             <Button variant="outline" onClick={() => setIsAddPaymentOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddPayment}>Add Payment</Button>
+            <Button onClick={handleAddPayment}>Add Payment</Button>/
           </div>
         </DialogContent>
       </Dialog>
