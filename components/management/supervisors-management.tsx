@@ -221,8 +221,9 @@ function CombinedAttendanceView({
           `/api/attendance?supervisorId=${supervisorId}&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`
         )
         if (!res.ok) throw new Error("Failed to fetch attendance")
-        const data: AttendanceRecord[] = await res.json()
-        setAttendanceData(data)
+        const json = await res.json()
+        const arr: AttendanceRecord[] = Array.isArray(json) ? json : (Array.isArray((json as any)?.data) ? (json as any).data : [])
+        setAttendanceData(arr)
 
         const map: Record<string, AttendanceStatus> = {}
         let present = 0
@@ -235,7 +236,7 @@ function CombinedAttendanceView({
         const daysInMonth = new Date(currentYear, currentMonth, 0).getDate()
         let workingDays = 0
 
-        data.forEach((record) => {
+        arr.forEach((record) => {
           if (!record.date) return
           const date = new Date(record.date)
           if (isNaN(date.getTime())) return

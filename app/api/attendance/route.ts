@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
     const supervisorId = searchParams.get("supervisorId");
     const supervisorIds = searchParams.get("supervisorIds");
     const includeLeave = searchParams.get("includeLeave") === 'true';
+    const monthlyEmployees = searchParams.get("monthlyEmployees") === 'true';
 
     let filter: any = {};
 
@@ -128,12 +129,23 @@ export async function GET(req: NextRequest) {
     }
 
     // Select all fields including leave-related ones
-    const attendanceRecords = await Attendance.find(filter)
+    let attendanceRecords = await Attendance.find(filter)
       .populate("supervisorId", "_id name email phone salary")
-      .populate("employeeId", "_id name email position")
+      .populate("employeeId", "_id name email position workType dailySalary")
       .sort({ date: 1 });
 
-    return NextResponse.json(attendanceRecords, { status: 200 });
+    // Filter for monthly employees if requested
+    if (monthlyEmployees) {
+      attendanceRecords = attendanceRecords.filter(record => {
+        if (record.employeeId && typeof record.employeeId === 'object') {
+          const employee = record.employeeId as any;
+          return employee.workType === "Monthly";
+        }
+        return false;
+      });
+    }
+
+    return NextResponse.json({ success: true, data: attendanceRecords }, { status: 200 });
   } catch (error) {
     console.error("Error fetching attendance:", error);
     return NextResponse.json(
@@ -142,7 +154,6 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-
 
 // Mock data for attendance
 const attendance = [

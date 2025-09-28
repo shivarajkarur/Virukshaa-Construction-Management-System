@@ -140,8 +140,9 @@ function CombinedAttendanceView({
           `/api/attendance?employeeId=${employeeId}&startDate=${startDate.toISOString()}&endDate=${endDate.toISOString()}`
         )
         if (!res.ok) throw new Error("Failed to fetch attendance")
-        const data: AttendanceRecord[] = await res.json()
-        setAttendanceData(data)
+        const json = await res.json()
+        const arr: AttendanceRecord[] = Array.isArray(json) ? json : (Array.isArray((json as any)?.data) ? (json as any).data : [])
+        setAttendanceData(arr)
 
         const map: Record<string, AttendanceStatus> = {}
         let present = 0
@@ -154,7 +155,7 @@ function CombinedAttendanceView({
         const daysInMonth = new Date(currentYear, currentMonth, 0).getDate()
         let workingDays = 0
 
-        data.forEach((record) => {
+        arr.forEach((record) => {
           if (!record.date) return
           const date = new Date(record.date)
           if (isNaN(date.getTime())) return
@@ -646,7 +647,7 @@ export default function EmployeesManagement() {
   const fetchAttendanceRealtime = async () => {
     try {
       const today = getTodayDateStr()
-      const res = await fetch(`/api/attendance/monthly-employees?date=${today}`, {
+      const res = await fetch(`/api/attendance?date=${today}&monthlyEmployees=true`, {
         cache: "no-store",
         headers: { Accept: "application/json" },
       })
@@ -712,16 +713,48 @@ export default function EmployeesManagement() {
       if (!res.ok) return
       const docs: Array<{ employeeId: string; shifts: number }> = await res.json()
       const map: Record<string, number> = {}
+      
+      // Track if any shifts were updated externally
+      let externalUpdates = false
+      
       for (const d of docs) {
         // d.employeeId may be object when populated; handle both
         const id = typeof (d as any).employeeId === "object" ? (d as any).employeeId._id : d.employeeId
-        map[id] = clampShift((d as any).shifts ?? 0)
+        const newShift = clampShift((d as any).shifts ?? 0)
+        
+        // Check if this is an external update (shift differs from current local state)
+        if (shiftsToday[id] !== newShift) {
+          externalUpdates = true
+        }
+        
+        map[id] = newShift
       }
+      
       setShiftsToday((prev) => ({ ...prev, ...map }))
+      
+      // Show notification if shifts were updated from external source
+      if (externalUpdates) {
+        toast({
+          title: "Shifts Updated",
+          description: "Employee shifts have been updated from another interface",
+          duration: 3000,
+        })
+      }
     } catch (e) {
       console.error("Failed to fetch employee shifts", e)
     }
   }
+
+  // Real-time shift synchronization - refresh shifts automatically
+  useEffect(() => {
+    fetchEmployeeShifts()
+    
+    // Set up interval for real-time synchronization (every 10 seconds)
+    const interval = setInterval(fetchEmployeeShifts, 10000)
+    
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const saveEmployeeShift = async (emp: Employee, count: number) => {
     try {

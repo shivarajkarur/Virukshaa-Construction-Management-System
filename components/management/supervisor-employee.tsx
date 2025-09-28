@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
-import { Users, RefreshCw, Search, Mail, Phone, Briefcase, CheckCircle, XCircle } from "lucide-react"
+import { Users, RefreshCw, Search, Mail, Phone, Briefcase, CheckCircle, XCircle, Calendar } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
 type AttendanceStatus = "Present" | "Absent" | "On Duty" | null
@@ -66,6 +66,63 @@ export default function SupervisorEmployee() {
   const [projects, setProjects] = useState<IProject[]>([])
   const supervisorId = typeof window !== "undefined" ? localStorage.getItem("userId") : null
   const role = typeof window !== "undefined" ? localStorage.getItem("userRole") : null
+  // Shift management state keyed by employeeId
+  const [shiftData, setShiftData] = useState<Record<string, { shifts: number; perShiftSalary: number; totalPay?: number }>>({})
+
+  // Create a reusable function to fetch shift data
+  const fetchShiftsRealtime = async () => {
+    try {
+      const today = new Date().toISOString().split("T")[0]
+      const res = await fetch(`/api/employee-shifts?date=${today}`, { cache: "no-store" })
+      const body = await res.json().catch(() => [])
+      if (!res.ok) {
+        toast.error((body as any)?.message || "Failed to fetch shifts.")
+        return
+      }
+      const map: Record<string, { shifts: number; perShiftSalary: number; totalPay?: number }> = {}
+      
+      // Track if any shifts were updated externally
+      let externalUpdates = false
+      
+      for (const doc of body as any[]) {
+        const eid = typeof doc.employeeId === "string" ? doc.employeeId : (doc.employeeId?._id || String(doc.employeeId))
+        if (!eid) continue
+        
+        const newShiftData = {
+          shifts: typeof doc.shifts === "number" ? doc.shifts : 0,
+          perShiftSalary: typeof doc.perShiftSalary === "number" ? doc.perShiftSalary : 0,
+          totalPay: typeof doc.totalPay === "number" ? doc.totalPay : undefined,
+        }
+        
+        // Check if this is an external update (shift differs from current local state)
+        if (shiftData[eid]?.shifts !== newShiftData.shifts) {
+          externalUpdates = true
+        }
+        
+        map[eid] = newShiftData
+      }
+      
+      setShiftData(map)
+      // reflect latest shifts in employee cards
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          (emp.workType || "").toLowerCase() === "shift"
+            ? { ...emp, shiftsWorked: map[emp._id]?.shifts ?? emp.shiftsWorked ?? 0 }
+            : emp,
+        ),
+      )
+      
+      // Show notification if shifts were updated from external source
+      if (externalUpdates) {
+        toast("Shifts Updated", {
+          description: "Employee shifts have been updated from another interface",
+          duration: 3000,
+        })
+      }
+    } catch (err) {
+      console.error("Error fetching shifts:", err)
+    }
+  }
 
   const fetchEmployees = async () => {
     if (!supervisorId || role !== "supervisor") {
@@ -101,6 +158,9 @@ export default function SupervisorEmployee() {
         projectId: e.projectId,
       }))
       setEmployees(mapped)
+      
+      // Fetch shift data immediately after loading employees
+      await fetchShiftsRealtime()
     } catch (e: any) {
       setError(e?.message || "Failed to load employees")
     } finally {
@@ -157,7 +217,7 @@ export default function SupervisorEmployee() {
       const now = new Date()
       const timestamp = now.toISOString()
 
-      const response = await fetch("/api/attendance/monthly-employees", {
+      const response = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -210,21 +270,22 @@ export default function SupervisorEmployee() {
   const fetchAttendanceRealtime = async () => {
     try {
       const today = new Date().toISOString().split("T")[0]
-      const res = await fetch(`/api/attendance/monthly-employees?date=${today}`, {
+      const res = await fetch(`/api/attendance?date=${today}&monthlyEmployees=true`, {
         cache: "no-store",
         headers: { Accept: "application/json" },
       })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok || !body?.success) {
+      const raw = await res.json().catch(() => null)
+      if (!res.ok) {
+        const msg = (raw as any)?.message
         if (res.status === 401) {
           toast.error("Unauthorized. Please sign in to view live attendance.")
         } else {
-          toast.error(body?.message || "Failed to fetch attendance.")
+          toast.error(msg || "Failed to fetch attendance.")
         }
         return
       }
 
-      const records: any[] = body.data || []
+      const records: any[] = Array.isArray(raw) ? (raw as any[]) : ((raw as any)?.data || [])
       const attMap = new Map<string, any>()
       for (const rec of records) {
         const eid =
@@ -249,8 +310,8 @@ export default function SupervisorEmployee() {
             attendance: {
               ...emp.attendance,
               status: statusNorm,
-              checkIn: att.checkIn || emp.attendance?.checkIn,
-              checkOut: att.checkOut || emp.attendance?.checkOut,
+              checkIn: (att as any).checkIn || emp.attendance?.checkIn,
+              checkOut: (att as any).checkOut || emp.attendance?.checkOut,
               present: statusNorm === "Present" || statusNorm === "On Duty",
             },
           }
@@ -270,6 +331,51 @@ export default function SupervisorEmployee() {
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+  // Fetch shift data whenever employees list changes
+  useEffect(() => {
+    const hasShiftEmployees = employees.some((e) => (e.workType || "").toLowerCase() === "shift")
+    if (!hasShiftEmployees) return
+
+    fetchShiftsRealtime()
+    
+    // Set up interval for real-time synchronization (every 10 seconds)
+    const interval = setInterval(fetchShiftsRealtime, 10000)
+    
+    return () => clearInterval(interval)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employees])
+  // Save/update shift assignment for an employee
+  const saveShift = async (employeeId: string, shifts: number, perShiftSalary: number) => {
+    try {
+      const today = new Date().toISOString().split("T")[0]
+      const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : null
+      
+      const res = await fetch(`/api/employee-shifts`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          ...(userId ? { "Authorization": `Bearer ${userId}` } : {})
+        },
+        body: JSON.stringify({ employeeId, date: today, shifts, perShiftSalary }),
+      })
+      
+      const doc = await res.json().catch(() => null)
+      if (!res.ok) {
+        toast.error((doc as any)?.message || "Failed to save shift.")
+        return false
+      }
+      const s = typeof (doc as any)?.shifts === "number" ? (doc as any).shifts : shifts
+      const pay = typeof (doc as any)?.perShiftSalary === "number" ? (doc as any).perShiftSalary : perShiftSalary
+      setShiftData((prev) => ({ ...prev, [employeeId]: { shifts: s, perShiftSalary: pay, totalPay: (doc as any)?.totalPay } }))
+      setEmployees((prev) => prev.map((e) => (e._id === employeeId ? { ...e, shiftsWorked: s } : e)))
+      toast.success("Shift updated successfully")
+      return true
+    } catch (err) {
+      console.error("Error saving shift:", err)
+      toast.error("Failed to save shift. Please try again.")
+      return false
+    }
+  }
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -315,6 +421,18 @@ export default function SupervisorEmployee() {
           </div>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex items-center gap-2"
+            onClick={() => {
+              // Navigate to today's shifts view
+              window.location.href = "/dashboard?section=employee-shifts";
+            }}
+          >
+            <Calendar className="w-4 h-4" />
+            Shift Today
+          </Button>
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
@@ -436,6 +554,136 @@ export default function SupervisorEmployee() {
                     {/* other info blocks remain commented to preserve current UI */}
                   </div>
 
+                  {/* Shift Management - Only for Shift-based employees */}
+                  {(emp.workType || "").toLowerCase() === "shift" && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">Today's Shifts:</span>
+                          <Badge variant="outline" className="text-xs">
+                            {typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]?.shifts : emp.shiftsWorked ?? 0}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={String(shiftData[emp._id]?.shifts ?? emp.shiftsWorked ?? 0)}
+                            onValueChange={(value) => {
+                              const v = parseFloat(value)
+                              setShiftData((prev) => ({
+                                ...prev,
+                                [emp._id]: {
+                                  shifts: isNaN(v) ? 0 : v,
+                                  perShiftSalary:
+                                    typeof prev[emp._id]?.perShiftSalary === "number"
+                                      ? prev[emp._id]!.perShiftSalary
+                                      : typeof emp.salary === "number"
+                                        ? emp.salary
+                                        : 0,
+                                },
+                              }))
+                            }}
+                          >
+                            <SelectTrigger className="w-24 h-8 text-xs bg-white hover:bg-gray-50">
+                              <SelectValue placeholder="Shifts" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {[0, 0.5, 1, 1.5, 2, 2.5, 3].map((n) => (
+                                <SelectItem key={n} value={String(n)}>
+                                  {n}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            className="w-28 h-8 text-xs"
+                            value={String(
+                              typeof shiftData[emp._id]?.perShiftSalary === "number"
+                                ? shiftData[emp._id]!.perShiftSalary
+                                : typeof emp.salary === "number"
+                                  ? emp.salary
+                                  : 0,
+                            )}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value)
+                              setShiftData((prev) => ({
+                                ...prev,
+                                [emp._id]: {
+                                  shifts: typeof prev[emp._id]?.shifts === "number" ? prev[emp._id]!.shifts : emp.shiftsWorked ?? 0,
+                                  perShiftSalary: isNaN(v) ? 0 : v,
+                                },
+                              }))
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              saveShift(
+                                emp._id,
+                                typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : emp.shiftsWorked ?? 0,
+                                typeof shiftData[emp._id]?.perShiftSalary === "number"
+                                  ? shiftData[emp._id]!.perShiftSalary
+                                  : typeof emp.salary === "number"
+                                    ? emp.salary
+                                    : 0,
+                              )
+                            }
+                          >
+                            Save
+                          </Button>
+                        </div>
+                      </div>
+                      {typeof shiftData[emp._id]?.totalPay === "number" && (
+                        <div className="mt-2 text-xs text-muted-foreground">Total Pay: ₹{shiftData[emp._id]!.totalPay!.toFixed(2)}</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Daily Shift Selection - Only for Daily employees */}
+                  {(emp.workType || "").toLowerCase() === "daily" && (
+                    <div className="mt-4 pt-4 border-t border-border">
+                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                        <span className="text-sm font-medium">Shifts Today (0–3, 0.5-step)</span>
+                        <Select
+                          value={String(typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0)}
+                          onValueChange={(val) => {
+                            const num = parseFloat(val)
+                            const clamped = Math.max(0, Math.min(3, Math.round(((isNaN(num) ? 0 : num)) * 2) / 2))
+                            const perShift = typeof emp.salary === "number"
+                              ? emp.salary
+                              : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0)
+                            setShiftData((prev) => ({
+                              ...prev,
+                              [emp._id]: {
+                                shifts: clamped,
+                                perShiftSalary: perShift,
+                                totalPay: clamped * perShift,
+                              },
+                            }))
+                            saveShift(emp._id, clamped, perShift)
+                          }}
+                        >
+                          <SelectTrigger className="h-8 w-24 px-2 py-1">
+                            <SelectValue placeholder="0" />
+                          </SelectTrigger>
+                          <SelectContent align="start">
+                            <SelectItem value="0">0</SelectItem>
+                            <SelectItem value="0.5">0.5</SelectItem>
+                            <SelectItem value="1">1</SelectItem>
+                            <SelectItem value="1.5">1.5</SelectItem>
+                            <SelectItem value="2">2</SelectItem>
+                            <SelectItem value="2.5">2.5</SelectItem>
+                            <SelectItem value="3">3</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="mt-2 text-xs text-muted-foreground">
+                        Per Shift: ₹{(typeof emp.salary === "number" ? emp.salary : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0)).toFixed(2)} • Today's Pay: ₹{(((typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0) * (typeof emp.salary === "number" ? emp.salary : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0))) || 0).toFixed(2)}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Attendance Management - Only for Monthly employees */}
                   {emp.workType === "Monthly" && (
                     <div className="mt-4 pt-4 border-t border-border">
@@ -481,7 +729,7 @@ export default function SupervisorEmployee() {
                               <SelectItem 
                                 key={option.value} 
                                 value={option.value}
-                          
+                              
                               >
                                 <div className="flex items-center gap-2">
                                   <option.icon className="w-4 h-4" />
