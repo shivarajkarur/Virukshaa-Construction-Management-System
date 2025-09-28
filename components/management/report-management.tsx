@@ -419,14 +419,14 @@ const ReportManagement = () => {
           return (
             <Card
               key={type}
-              className={`cursor-pointer transition-colors ${isActive ? 'border-primary bg-primary/50 text-white' : 'hover:bg-muted/50'
+              className={`cursor-pointer transition-colors ${isActive ? 'border-primary bg-primary text-white' : 'hover:bg-muted/50'
                 }`}
               onClick={() => setActiveTab(type as any)}
             >
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">
                   {type === 'supplier'
-                    ? 'Supply Requests from Supervisor (Material Request)'
+                    ? 'Material Requests from Supervisor'
                     : `${type.charAt(0).toUpperCase() + type.slice(1)} Reports`}
                 </CardTitle>
                 <FileText className="h-4 w-4 text-muted-foreground" />
@@ -439,9 +439,9 @@ const ReportManagement = () => {
                     count
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  {count === 1 ? 'Report' : 'Reports'}
-                </p>
+                {/* <p className="text-xs text-muted-foreground">
+                  {count === 1 ? 'Report' : 'requests'}
+                </p> */}
               </CardContent>
             </Card>
           );
@@ -492,9 +492,10 @@ const ReportManagement = () => {
                       <div className="flex justify-between items-start">
                         <div>
                           <h4 className="font-medium">
-                            {req.materialName} ({req.unit}) • Qty: {req.quantity}
+                            {req.materialName} ({req.unit}) <br /> Qty: {req.quantity}
+                            <br />
                             {req.projectId && (
-                              <> {' '}• Project: {projects.find(p => p._id === req.projectId)?.title || req.projectId}</>
+                              <> {' '}Project: {projects.find(p => p._id === req.projectId)?.title || req.projectId}</>
                             )}
                           </h4>
                           {/* <p className="text-sm text-muted-foreground">
@@ -549,9 +550,9 @@ const ReportManagement = () => {
 
                             <div className="col-span-1 text-muted-foreground">Required</div>
                             <div className="col-span-2">{new Date(req.requiredDate).toLocaleDateString()}</div>
-
+{/* 
                             <div className="col-span-1 text-muted-foreground">Status</div>
-                            <div className="col-span-2 capitalize">{req.status}</div>
+                            <div className="col-span-2 capitalize">{req.status}</div> */}
 
                             {req.supervisor && (
                               <>
@@ -598,10 +599,10 @@ const ReportManagement = () => {
                       <div>
                         <h4 className="font-medium">
                           {((report as any).supervisorId && (supervisors.find(s => s._id === (report as any).supervisorId)?.name))
-                            || report.createdBy }
+                            || report.createdBy } <br />
                           {(report as any).projectId && (
                             <>
-                              {' '}• Project: {projects.find(p => p._id === (report as any).projectId)?.title || (report as any).projectId}
+                              {' '}Project: {projects.find(p => p._id === (report as any).projectId)?.title || (report as any).projectId}
                             </>
                           )}
                         </h4>

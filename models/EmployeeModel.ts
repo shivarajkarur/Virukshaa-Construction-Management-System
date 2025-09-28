@@ -68,11 +68,10 @@ const Employee = (mongoose.models.Employee as mongoose.Model<IEmployee>)
 // Preserve legacy index cleanup (safe no-op if index doesn't exist)
 try {
   Employee.collection.dropIndex('username_1').catch((err: any) => {
-    if (err && err.codeName !== 'NamespaceNotFound') {
+    if (err && err.codeName !== 'NamespaceNotFound' && err.codeName !== 'IndexNotFound') {
       console.log('Error dropping username index:', err);
-    } else {
-      console.log('Dropped username index successfully');
     }
+    // Silently ignore IndexNotFound errors as the index doesn't exist
   });
 } catch (e) {
   console.log('Error checking for existing model:', e);

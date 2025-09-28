@@ -1772,7 +1772,7 @@ const PayrollManagement = () => {
                     <TableHead>Time</TableHead>
                     <TableHead>Recipient</TableHead>
                     <TableHead>Role</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-center">Amount</TableHead>
                     <TableHead>Details</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1807,7 +1807,7 @@ const PayrollManagement = () => {
                               {role || "unknown"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-center">
                             <div className="flex items-center justify-end gap-2">
                               <Input
                                 type="number"
@@ -1816,7 +1816,7 @@ const PayrollManagement = () => {
                                   const newAmount = Number.parseFloat(e.target.value) || 0
                                   updatePayrollAmount(rec._id, newAmount)
                                 }}
-                                className="w-24 text-right text-sm"
+                                className="w-24 text-center text-sm"
                                 min="0"
                                 step="0.01"
                               />
@@ -1859,17 +1859,17 @@ const PayrollManagement = () => {
                     <TableHead>Materials & Quantities</TableHead>
                     <TableHead>Active Projects</TableHead>
                     {/* <TableHead>Supply Status</TableHead> */}
-                    <TableHead className="text-right">Total Value</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-right">Due</TableHead>
+                    <TableHead className="text-center">Total Value</TableHead>
+                    <TableHead className="text-center">Amount</TableHead>
+                    <TableHead className="text-center">Due</TableHead>
                   </>
                 ) : (
                   <>
                     <TableHead>Email</TableHead>
-                    <TableHead className="text-right">{getAmountFieldName(selectedRole)}</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
-                    <TableHead className="text-right">Due</TableHead>
-                    <TableHead>Last Payment</TableHead>
+                    <TableHead className="text-center">{getAmountFieldName(selectedRole)}</TableHead>
+                    <TableHead className="text-center">Paid</TableHead>
+                    <TableHead className="text-center">Due</TableHead>
+                    <TableHead className="text-center w-32 ">Last Payment</TableHead>
                   </>
                 )}
                 <TableHead>Status</TableHead>
@@ -1888,7 +1888,7 @@ const PayrollManagement = () => {
                     {selectedRole === "supplier" ? (
                       <>
                         <TableCell className="max-w-[200px]">
-                          {user.projectMaterials?.length > 0 ? (
+                          {user.projectMaterials && user.projectMaterials.length > 0 ? (
                             <div className="space-y-1">
                               {user.projectMaterials.slice(0, 3).map((material, idx) => (
                                 <div key={idx} className="text-sm">
@@ -1950,7 +1950,7 @@ const PayrollManagement = () => {
                           })()}
                         </TableCell> */}
 
-                        <TableCell className="text-right">
+                        <TableCell className="text-center">
                           {editingId === user._id && editForm ? (
                             <div className="space-y-2">
                               <span className="font-medium">
@@ -1970,13 +1970,13 @@ const PayrollManagement = () => {
                           )}
                         </TableCell>
 
-                        <TableCell className="text-right">
+                        <TableCell className="text-center">
                           {editingId === user._id && editForm ? (
                             <Input
                               type="number"
                               value={editForm.totalPaid || ""}
                               onChange={(e) => handleFormChange("totalPaid", e.target.value)}
-                              className="h-7 text-right text-sm"
+                              className="h-7 text-center text-sm"
                               placeholder="Paid amount"
                             />
                           ) : (
@@ -1989,7 +1989,7 @@ const PayrollManagement = () => {
                     ) : (
                       <>
                         <TableCell>{user.email}</TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center">
                           {editingId === user._id && editForm ? (
                             <Input
                               type="number"
@@ -2003,7 +2003,7 @@ const PayrollManagement = () => {
                             formatCurrency(user[getAmountFieldKey(selectedRole)] || 0)
                           )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center">
                           {editingId === user._id && editForm ? (
                             <Input
                               type="number"
@@ -2017,7 +2017,7 @@ const PayrollManagement = () => {
                             formatCurrency(user.totalPaid)
                           )}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-center">
                           {editingId === user._id && editForm ? (
                             <span className="text-muted-foreground">{formatCurrency(editForm.dueAmount || 0)}</span>
                           ) : (
@@ -2026,8 +2026,8 @@ const PayrollManagement = () => {
                         </TableCell>
                         <TableCell>
                           {user.lastPaymentDate ? (
-                            <div>
-                              <div className="text-sm">{formatDate(user.lastPaymentDate)}</div>
+                            <div className="w-32">
+                              <div className="text-sm text-center">{formatDate(user.lastPaymentDate)}</div>
                               {/* <div className="text-xs text-muted-foreground">
                                 {formatCurrency(user.lastPaymentAmount || 0)}
                               </div> */}
@@ -2042,7 +2042,7 @@ const PayrollManagement = () => {
                     {selectedRole === "supplier" && (
                       <TableCell>
                         <div>
-                          <div className="text-right">{formatCurrency(user.dueAmount || 0)}</div>
+                          <div className="text-center">{formatCurrency(user.dueAmount || 0)}</div>
                         </div>
                       </TableCell>
                     )}

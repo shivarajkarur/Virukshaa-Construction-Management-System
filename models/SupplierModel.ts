@@ -117,11 +117,10 @@ try {
   // If model exists, check and drop the problematic index
   if (Supplier) {
     Supplier.collection.dropIndex('username_1').catch((err: any) => {
-      if (err && err.codeName !== 'NamespaceNotFound') {
+      if (err && err.codeName !== 'NamespaceNotFound' && err.codeName !== 'IndexNotFound') {
         console.log('Error dropping username index:', err);
-      } else {
-        console.log('Dropped username index successfully');
       }
+      // Silently ignore IndexNotFound errors as the index doesn't exist
     });
   }
 } catch (e) {

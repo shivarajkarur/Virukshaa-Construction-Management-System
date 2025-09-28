@@ -14,8 +14,8 @@ type AttendanceStatus = "Present" | "Absent" | "On Duty" | null
 
 const attendanceOptions: { value: Exclude<AttendanceStatus, null>; label: string; icon: LucideIcon }[] = [
   { value: "Present", label: "Present", icon: CheckCircle },
-  { value: "On Duty", label: "On Duty", icon: Briefcase},
-  { value: "Absent", label: "Absent", icon: XCircle},
+  { value: "On Duty", label: "On Duty", icon: Briefcase },
+  { value: "Absent", label: "Absent", icon: XCircle },
 ]
 
 type SupervisorEmployeeItem = {
@@ -80,28 +80,28 @@ export default function SupervisorEmployee() {
         return
       }
       const map: Record<string, { shifts: number; perShiftSalary: number; totalPay?: number }> = {}
-      
+
       // Track if any shifts were updated externally
       let externalUpdates = false
-      
+
       for (const doc of body as any[]) {
         const eid = typeof doc.employeeId === "string" ? doc.employeeId : (doc.employeeId?._id || String(doc.employeeId))
         if (!eid) continue
-        
+
         const newShiftData = {
           shifts: typeof doc.shifts === "number" ? doc.shifts : 0,
           perShiftSalary: typeof doc.perShiftSalary === "number" ? doc.perShiftSalary : 0,
           totalPay: typeof doc.totalPay === "number" ? doc.totalPay : undefined,
         }
-        
+
         // Check if this is an external update (shift differs from current local state)
         if (shiftData[eid]?.shifts !== newShiftData.shifts) {
           externalUpdates = true
         }
-        
+
         map[eid] = newShiftData
       }
-      
+
       setShiftData(map)
       // reflect latest shifts in employee cards
       setEmployees((prev) =>
@@ -111,11 +111,11 @@ export default function SupervisorEmployee() {
             : emp,
         ),
       )
-      
+
       // Show notification if shifts were updated from external source
       if (externalUpdates) {
         toast("Shifts Updated", {
-          description: "Employee shifts have been updated from another interface",
+          description: "Employee shifts have been updated from admin",
           duration: 3000,
         })
       }
@@ -158,7 +158,7 @@ export default function SupervisorEmployee() {
         projectId: e.projectId,
       }))
       setEmployees(mapped)
-      
+
       // Fetch shift data immediately after loading employees
       await fetchShiftsRealtime()
     } catch (e: any) {
@@ -238,14 +238,14 @@ export default function SupervisorEmployee() {
           prev.map((emp) =>
             emp._id === employeeId
               ? {
-                  ...emp,
-                  attendance: {
-                    ...emp.attendance,
-                    status,
-                    checkIn: status === "Present" || status === "On Duty" ? timestamp : emp.attendance?.checkIn,
-                    present: status === "Present" || status === "On Duty",
-                  },
-                }
+                ...emp,
+                attendance: {
+                  ...emp.attendance,
+                  status,
+                  checkIn: status === "Present" || status === "On Duty" ? timestamp : emp.attendance?.checkIn,
+                  present: status === "Present" || status === "On Duty",
+                },
+              }
               : emp,
           ),
         )
@@ -337,10 +337,10 @@ export default function SupervisorEmployee() {
     if (!hasShiftEmployees) return
 
     fetchShiftsRealtime()
-    
+
     // Set up interval for real-time synchronization (every 10 seconds)
     const interval = setInterval(fetchShiftsRealtime, 10000)
-    
+
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [employees])
@@ -349,16 +349,16 @@ export default function SupervisorEmployee() {
     try {
       const today = new Date().toISOString().split("T")[0]
       const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : null
-      
+
       const res = await fetch(`/api/employee-shifts`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           ...(userId ? { "Authorization": `Bearer ${userId}` } : {})
         },
         body: JSON.stringify({ employeeId, date: today, shifts, perShiftSalary }),
       })
-      
+
       const doc = await res.json().catch(() => null)
       if (!res.ok) {
         toast.error((doc as any)?.message || "Failed to save shift.")
@@ -421,7 +421,7 @@ export default function SupervisorEmployee() {
           </div>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Button
+          {/* <Button
             variant="outline"
             size="sm"
             className="flex items-center gap-2"
@@ -432,7 +432,7 @@ export default function SupervisorEmployee() {
           >
             <Calendar className="w-4 h-4" />
             Shift Today
-          </Button>
+          </Button> */}
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
@@ -494,32 +494,31 @@ export default function SupervisorEmployee() {
         {filtered.map((emp) => (
           <Card key={emp._id} className="hover:shadow-lg transition-all duration-200 border-0 shadow-sm">
             <CardContent className="p-6">
+             
               <div className="flex items-start gap-4">
                 {/* Avatar intentionally commented out to keep current UI */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <h3 className="font-semibold text-lg leading-tight truncate">{emp.name}</h3>
-                      {(emp.role || emp.position) && (
-                        <p className="text-sm text-muted-foreground mt-1">{emp.role || emp.position}</p>
-                      )}
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div className="min-w-0 text-center md:text-left">
+                      <h2 className="font-semibold text-xl md:text-2xl leading-tight truncate">{emp.name}</h2>
+                      {(emp.role || emp.position) && <p className="text-sm mt-1 text-pretty">{emp.role || emp.position}</p>}
                       {emp.projectId && (
-                        <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <div className="mt-1 flex items-center justify-center md:justify-start gap-2 text-xs text-muted-foreground">
                           <Briefcase className="w-3 h-3" />
                           <span>Project: {projects.find((p) => p._id === emp.projectId)?.title || "No project"}</span>
                         </div>
                       )}
                     </div>
                     {emp.status && (
-                      <Badge variant={getStatusVariant(emp.status)} className="shrink-0 text-xs">
+                      <Badge variant={getStatusVariant(emp.status)} className="self-center md:self-auto shrink-0 text-xs">
                         {emp.status}
                       </Badge>
                     )}
                   </div>
 
-                  <div className="mt-4 space-y-3">
+                  <div className="mt-4 space-y-3 text-center md:text-left">
                     {emp.email && (
-                      <div className="flex items-center gap-3 text-sm group">
+                      <div className="flex items-center justify-center md:justify-start gap-3 text-sm group">
                         <Mail className="w-4 h-4 text-muted-foreground shrink-0" />
                         <a
                           className="text-muted-foreground hover:text-primary transition-colors truncate"
@@ -532,21 +531,19 @@ export default function SupervisorEmployee() {
                     )}
 
                     {emp.phone && (
-                      <div className="flex items-center gap-3 text-sm">
+                      <div className="flex items-center justify-center md:justify-start gap-3 text-sm">
                         <Phone className="w-4 h-4 text-muted-foreground shrink-0" />
                         <span className="text-muted-foreground">{emp.phone}</span>
                       </div>
                     )}
 
                     {(emp.workType || typeof emp.salary === "number") && (
-                      <div className="flex items-center gap-3 text-sm">
+                      <div className="flex items-center justify-center md:justify-start gap-3 text-sm">
                         <Briefcase className="w-4 h-4 text-muted-foreground shrink-0" />
                         <span className="text-muted-foreground">
                           {emp.workType}
                           {emp.workType?.toLowerCase() === "shift" && typeof emp.shiftsWorked === "number" && (
-                            <span className="ml-2 text-xs bg-secondary px-2 py-1 rounded">
-                              {emp.shiftsWorked} shifts
-                            </span>
+                            <span className="ml-2 text-xs bg-secondary px-2 py-1 rounded">{emp.shiftsWorked} shifts</span>
                           )}
                         </span>
                       </div>
@@ -561,14 +558,16 @@ export default function SupervisorEmployee() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">Today's Shifts:</span>
                           <Badge variant="outline" className="text-xs">
-                            {typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]?.shifts : emp.shiftsWorked ?? 0}
+                            {typeof shiftData[emp._id]?.shifts === "number"
+                              ? shiftData[emp._id]?.shifts
+                              : (emp.shiftsWorked ?? 0)}
                           </Badge>
                         </div>
                         <div className="flex items-center gap-2">
                           <Select
                             value={String(shiftData[emp._id]?.shifts ?? emp.shiftsWorked ?? 0)}
                             onValueChange={(value) => {
-                              const v = parseFloat(value)
+                              const v = Number.parseFloat(value)
                               setShiftData((prev) => ({
                                 ...prev,
                                 [emp._id]: {
@@ -605,11 +604,12 @@ export default function SupervisorEmployee() {
                                   : 0,
                             )}
                             onChange={(e) => {
-                              const v = parseFloat(e.target.value)
+                              const v = Number.parseFloat(e.target.value)
                               setShiftData((prev) => ({
                                 ...prev,
                                 [emp._id]: {
-                                  shifts: typeof prev[emp._id]?.shifts === "number" ? prev[emp._id]!.shifts : emp.shiftsWorked ?? 0,
+                                  shifts:
+                                    typeof prev[emp._id]?.shifts === "number" ? prev[emp._id]!.shifts : (emp.shiftsWorked ?? 0),
                                   perShiftSalary: isNaN(v) ? 0 : v,
                                 },
                               }))
@@ -621,7 +621,9 @@ export default function SupervisorEmployee() {
                             onClick={() =>
                               saveShift(
                                 emp._id,
-                                typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : emp.shiftsWorked ?? 0,
+                                typeof shiftData[emp._id]?.shifts === "number"
+                                  ? shiftData[emp._id]!.shifts
+                                  : (emp.shiftsWorked ?? 0),
                                 typeof shiftData[emp._id]?.perShiftSalary === "number"
                                   ? shiftData[emp._id]!.perShiftSalary
                                   : typeof emp.salary === "number"
@@ -635,7 +637,9 @@ export default function SupervisorEmployee() {
                         </div>
                       </div>
                       {typeof shiftData[emp._id]?.totalPay === "number" && (
-                        <div className="mt-2 text-xs text-muted-foreground">Total Pay: ₹{shiftData[emp._id]!.totalPay!.toFixed(2)}</div>
+                        <div className="mt-2 text-xs text-muted-foreground">
+                          Total Pay: ₹{shiftData[emp._id]!.totalPay!.toFixed(2)}
+                        </div>
                       )}
                     </div>
                   )}
@@ -648,11 +652,14 @@ export default function SupervisorEmployee() {
                         <Select
                           value={String(typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0)}
                           onValueChange={(val) => {
-                            const num = parseFloat(val)
-                            const clamped = Math.max(0, Math.min(3, Math.round(((isNaN(num) ? 0 : num)) * 2) / 2))
-                            const perShift = typeof emp.salary === "number"
-                              ? emp.salary
-                              : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0)
+                            const num = Number.parseFloat(val)
+                            const clamped = Math.max(0, Math.min(3, Math.round((isNaN(num) ? 0 : num) * 2) / 2))
+                            const perShift =
+                              typeof emp.salary === "number"
+                                ? emp.salary
+                                : typeof shiftData[emp._id]?.perShiftSalary === "number"
+                                  ? shiftData[emp._id]!.perShiftSalary!
+                                  : 0
                             setShiftData((prev) => ({
                               ...prev,
                               [emp._id]: {
@@ -679,7 +686,7 @@ export default function SupervisorEmployee() {
                         </Select>
                       </div>
                       <div className="mt-2 text-xs text-muted-foreground">
-                        Per Shift: ₹{(typeof emp.salary === "number" ? emp.salary : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0)).toFixed(2)} • Today's Pay: ₹{(((typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0) * (typeof emp.salary === "number" ? emp.salary : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0))) || 0).toFixed(2)}
+                        {/* Per Shift: ₹{(typeof emp.salary === "number" ? emp.salary : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0)).toFixed(2)} • Today's Pay: ₹{(((typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0) * (typeof emp.salary === "number" ? emp.salary : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0))) || 0).toFixed(2)} */}
                       </div>
                     </div>
                   )}
@@ -714,23 +721,21 @@ export default function SupervisorEmployee() {
                           value={emp.attendance?.status || ""}
                           onValueChange={(value) => handleAttendanceChange(emp._id, value as AttendanceStatus)}
                         >
-                          <SelectTrigger 
-                            className={`w-32 h-8 text-xs ${
-                              emp.attendance?.status === 'Present' ? 'bg-green-100 hover:bg-green-100/80' :
-                              emp.attendance?.status === 'Absent' ? 'bg-red-100 hover:bg-red-100/80' :
-                              emp.attendance?.status === 'On Duty' ? 'bg-yellow-100 hover:bg-yellow-100/80' :
-                              'bg-white hover:bg-gray-50'
-                            }`}
+                          <SelectTrigger
+                            className={`w-32 h-8 text-xs ${emp.attendance?.status === "Present"
+                                ? "bg-green-100 hover:bg-green-100/80"
+                                : emp.attendance?.status === "Absent"
+                                  ? "bg-red-100 hover:bg-red-100/80"
+                                  : emp.attendance?.status === "On Duty"
+                                    ? "bg-yellow-100 hover:bg-yellow-100/80"
+                                    : "bg-white hover:bg-gray-50"
+                              }`}
                           >
                             <SelectValue placeholder="Set Status" />
                           </SelectTrigger>
                           <SelectContent>
                             {attendanceOptions.map((option) => (
-                              <SelectItem 
-                                key={option.value} 
-                                value={option.value}
-                              
-                              >
+                              <SelectItem key={option.value} value={option.value}>
                                 <div className="flex items-center gap-2">
                                   <option.icon className="w-4 h-4" />
                                   <span>{option.label}</span>
