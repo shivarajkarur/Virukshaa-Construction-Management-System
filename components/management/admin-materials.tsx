@@ -5,7 +5,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { Package, ArrowLeft, AlertTriangle, TrendingDown, CheckCircle } from "lucide-react"
+import { Package, ArrowLeft, AlertTriangle, TrendingDown, CheckCircle, Trash2 } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { toast } from "sonner"
 
 interface Project {
   _id: string
@@ -33,6 +45,8 @@ export default function AdminMaterials() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [materials, setMaterials] = useState<Material[]>([])
   const [search, setSearch] = useState("")
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [projectToDelete, setProjectToDelete] = useState<string | null>(null)
 
   const filteredMaterials = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -91,6 +105,50 @@ export default function AdminMaterials() {
     }
   }
 
+  const handleDeleteProject = async (projectId: string) => {
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      })
+
+      if (response.ok) {
+        // Remove project from local state
+        setProjects(prev => prev.filter(p => p._id !== projectId))
+        toast.success("Project deleted successfully")
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        
+        if (response.status === 404) {
+          // Project doesn't exist in database, remove from local state
+          setProjects(prev => prev.filter(p => p._id !== projectId))
+          toast.info("Project was already removed from the database")
+        } else {
+          throw new Error(errorData.message || `Failed to delete project: ${response.status}`)
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting project:", error)
+      
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        toast.error("Cannot connect to server. Please check your internet connection")
+      } else {
+        toast.error(error instanceof Error ? error.message : "Failed to delete project. Please try again")
+      }
+    } finally {
+      setIsDeleting(false)
+      setProjectToDelete(null)
+    }
+  }
+
+  const confirmDelete = (projectId: string) => {
+    setProjectToDelete(projectId)
+  }
+
+  const cancelDelete = () => {
+    setProjectToDelete(null)
+  }
+
   if (!selectedProject) {
     return (
       <div className="space-y-6">
@@ -107,22 +165,56 @@ export default function AdminMaterials() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {projects.map((p) => (
-            <Card key={p._id} className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => openProject(p)}>
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>{p.title}</span>
-                  <Badge variant="outline">{p.status || 'Active'}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {/* <div className="flex items-center justify-between text-sm text-muted-foreground"> */}
-                {/* <span>Progress</span> */}
-                {/* <span>{typeof p.progress === 'number' ? `${p.progress}%` : '-'}</span> */}
-                {/* </div> */}
-                {p.client?.name && (
-                  <div className="mt-2 text-sm text-muted-foreground">Client: {p.client.name}</div>
-                )}
-              </CardContent>
+            <Card key={p._id} className="hover:shadow-lg transition-shadow relative group">
+              {/* Delete button */}
+              <AlertDialog open={projectToDelete === p._id} onOpenChange={(open) => !open && cancelDelete()}>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      confirmDelete(p._id)
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Project</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete the project "{p.title}"? This action cannot be undone.
+                      All materials associated with this project will also be removed.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel onClick={cancelDelete}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => handleDeleteProject(p._id)}
+                      disabled={isDeleting}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              
+              <div className="cursor-pointer" onClick={() => openProject(p)}>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-start gap-10">
+                    <span>{p.title}</span> 
+                    <Badge variant="outline">{p.status || 'Active'}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {p.client?.name && (
+                    <div className="mt-2 text-sm text-muted-foreground">Client: {p.client.name}</div>
+                  )}
+                </CardContent>
+              </div>
             </Card>
           ))}
           {!loading && projects.length === 0 && (
@@ -174,8 +266,8 @@ export default function AdminMaterials() {
                 <div>{m.currentStock}</div>
                 <div className="text-muted-foreground">Reorder Level</div>
                 <div>{m.reorderLevel}</div>
-                <div className="text-muted-foreground">Price/Unit</div>
-                <div>₹{Number(m.pricePerUnit || 0).toLocaleString()}</div>
+                {/* <div className="text-muted-foreground">Price/Unit</div> */}
+                {/* <div>₹{Number(m.pricePerUnit || 0).toLocaleString()}</div> */}
               </div>
               <div className="mt-2 text-xs text-muted-foreground">
                 Updated: {new Date(m.lastUpdated).toLocaleString()}

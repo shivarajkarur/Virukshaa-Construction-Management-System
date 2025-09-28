@@ -326,7 +326,7 @@ const SettingsContent = () => {
               <div className="divide-y divide-gray-100">
                 <div className=" py-8 sm:py-6 flex flex-col sm:flex-row items-start space-y-6 sm:space-y-0 sm:space-x-8">
                    {/* Profile Photo - Left Side */}
-                   <div className="flex-shrink-0 w-full sm:w-1/3">
+                   <div className="flex-shrink-0 w-full sm:w-1/3 flex items-center justify-center">
                      {formData.profileImage ? (
                        <a
                          href={formData.profileImage}
@@ -338,7 +338,7 @@ const SettingsContent = () => {
                            <img
                              src={formData.profileImage}
                              alt="Profile"
-                             className="w-full h-[300px] sm:h-[500px] object-contain"
+                             className="w-[300px] h-[200px] sm:h-[300px] object-cover"
                            />
                          </div>
                        </a>
