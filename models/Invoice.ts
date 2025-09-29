@@ -5,7 +5,7 @@ export interface IInvoice extends Document {
   projectId?: mongoose.Schema.Types.ObjectId;
   invoiceNumber: string;
   amount: number;
-  status: "Pending" | "Paid" | "Overdue";
+  status: "Request" | "Pending" | "Paid" | "Overdue";
   dueDate: Date;
   notes?: string;
   createdAt: Date;
@@ -20,8 +20,8 @@ const invoiceSchema = new Schema<IInvoice>(
     amount: { type: Number, required: true, min: 0 },
     status: {
       type: String,
-      enum: ["Pending", "Paid", "Overdue"],
-      default: "Pending",
+      enum: ["Request", "Pending", "Paid", "Overdue"],
+      default: "Request",
       index: true,
     },
     dueDate: { type: Date, required: true },

@@ -62,7 +62,7 @@ import {
 } from "lucide-react"
 import MessageBox from "@/components/common/MessageBox"
 
-interface Client {
+interface Client { 
   _id: string
   name: string
   username: string
@@ -119,7 +119,7 @@ interface Invoice {
   _id: string
   invoiceNumber: string
   amount: number
-  status: "Request" | "Pending" | "Paid" | "Overdue"
+  status: "Pending" | "Paid" | "Overdue"
   dueDate: string
   createdAt: string
   notes?: string
@@ -151,6 +151,8 @@ interface MessageDialogProps {
   client: Client | null
   onSend: (message: string, clientId: string) => void
 }
+
+
 
 const initialFormData: FormData = {
   name: "",
@@ -222,7 +224,7 @@ export default function ClientsManagement() {
   const [invoiceFormData, setInvoiceFormData] = useState({
     invoiceNumber: "",
     amount: 0,
-    status: "Request" as Invoice["status"],
+    status: "Pending" as Invoice["status"],
     dueDate: new Date().toISOString().split("T")[0],
     notes: "",
   })
@@ -252,20 +254,6 @@ export default function ClientsManagement() {
   useEffect(() => {
     fetchClients()
   }, [])
-
-  // Set up interval for automatic invoice status checking
-  useEffect(() => {
-    // Check statuses immediately on component mount
-    checkAndUpdateInvoiceStatuses();
-    
-    // Set up interval to check every hour
-    const intervalId = setInterval(() => {
-      checkAndUpdateInvoiceStatuses();
-    }, 60 * 60 * 1000); // Check every hour
-
-    // Cleanup interval on component unmount
-    return () => clearInterval(intervalId);
-  }, []);
 
   // Fetch all clients
   const fetchClients = async () => {
@@ -328,8 +316,6 @@ export default function ClientsManagement() {
       }
       const data = await response.json()
       setClientInvoices(data)
-      // Check for overdue invoices after fetching
-      checkAndUpdateInvoiceStatuses(data);
     } catch (error) {
       console.error("Error fetching invoices:", error)
       setClientInvoices([])
@@ -338,57 +324,6 @@ export default function ClientsManagement() {
       setIsLoadingInvoices(false)
     }
   }
-
-  // Function to check and update invoice statuses based on due dates
-  const checkAndUpdateInvoiceStatuses = async (invoices?: Invoice[]) => {
-    try {
-      const targetInvoices = invoices || clientInvoices;
-      if (targetInvoices.length === 0) return;
-
-      const now = new Date();
-      const today = now.toISOString().split('T')[0];
-      
-      // Find invoices that are Pending and past due
-      const overdueInvoices = targetInvoices.filter(invoice => 
-        invoice.status === 'Pending' && 
-        invoice.dueDate < today
-      );
-
-      if (overdueInvoices.length === 0) return;
-
-      // Update each overdue invoice
-      for (const invoice of overdueInvoices) {
-        try {
-          const res = await fetch(`/api/invoices/${invoice._id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...invoice,
-              status: 'Overdue'
-            })
-          });
-
-          if (res.ok) {
-            // Update local state
-            setClientInvoices(prev => prev.map(inv => 
-              inv._id === invoice._id ? { ...inv, status: 'Overdue' } : inv
-            ));
-            console.log(`Updated invoice ${invoice.invoiceNumber} to Overdue`);
-          }
-        } catch (error) {
-          console.error(`Failed to update invoice ${invoice.invoiceNumber}:`, error);
-        }
-      }
-    } catch (error) {
-      console.error('Error checking invoice statuses:', error);
-    }
-  };
-
-  // Function to set initial status based on due date
-  const getInitialInvoiceStatus = (dueDate: string): 'Pending' | 'Overdue' => {
-    const today = new Date().toISOString().split('T')[0];
-    return dueDate < today ? 'Overdue' : 'Pending';
-  };
 
   // Message Dialog Functions
   const handleOpenMessageDialog = (client: Client) => {
@@ -682,7 +617,7 @@ export default function ClientsManagement() {
 
     // Username format validation (alphanumeric and minimum 4 characters)
     const usernameRegex = /^[a-zA-Z0-9]{4,}$/
-    if (!usernameRegex.test(formData.username.trim())) {
+    if (!usernameRegex.test(formData.username)) {
       toast.error("Username must be at least 4 characters long and contain only letters and numbers")
       return
     }
@@ -694,7 +629,7 @@ export default function ClientsManagement() {
 
     // Email format validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(formData.email.trim().toLowerCase())) {
+    if (!emailRegex.test(formData.email)) {
       toast.error("Please enter a valid email address")
       return
     }
@@ -705,8 +640,8 @@ export default function ClientsManagement() {
     }
 
     // Phone number validation (basic international format)
-    const phoneRegex = /^[+]?[\s\-$$$$0-9]*$/
-    if (!phoneRegex.test(formData.phone) || formData.phone.replace(/[^0-9]/g, "").length < 8) {
+    const phoneRegex = /^[+]?[\s\-\(\)0-9]*$/
+    if (!phoneRegex.test(formData.phone) || formData.phone.replace(/[^0-9]/g, '').length < 8) {
       toast.error("Please enter a valid phone number")
       return
     }
@@ -723,7 +658,7 @@ export default function ClientsManagement() {
       return
     }
 
-    // Password validation for new clients
+    // Password validation for new clients or when changing password
     if (!editingClient) {
       if (!formData.password) {
         toast.error("Password is required for new clients")
@@ -749,49 +684,15 @@ export default function ClientsManagement() {
         toast.info("For better security, use uppercase, lowercase, and numbers")
       }
     }
-    // If editing and a new password is provided, validate it
-    if (editingClient && formData.password) {
-      if (formData.password !== formData.confirmPassword) {
-        toast.error("Passwords do not match. Please check and try again")
-        return
-      }
-
-      if (formData.password.length < 6) {
-        toast.warning("Password must be at least 6 characters long")
-        return
-      }
-
-      const hasUpperCase = /[A-Z]/.test(formData.password)
-      const hasLowerCase = /[a-z]/.test(formData.password)
-      const hasNumbers = /\d/.test(formData.password)
-      if (!hasUpperCase || !hasLowerCase || !hasNumbers) {
-        toast.info("For better security, use uppercase, lowercase, and numbers")
-      }
-    }
 
     setLoading(true)
 
     const loadingToast = toast.loading(`${editingClient ? "Updating" : "Adding"} client...`)
 
     try {
-      // Sanitize and normalize input (helps avoid mobile auto-capitalization/correction issues)
       const clientData = {
-        name: formData.name.trim(),
-        username: formData.username.trim().toLowerCase(),
-        email: formData.email.trim().toLowerCase(),
-        phone: formData.phone.trim(),
-        password: formData.password,
-        confirmPassword: formData.confirmPassword,
-        company: (formData.company || "").trim(),
-        address: formData.address.trim(),
-        city: formData.city.trim(),
-        state: formData.state.trim(),
-        postalCode: formData.postalCode.trim(),
+        ...formData,
         projectTotalAmount: Number.parseFloat(formData.projectTotalAmount) || 0,
-        taxId: (formData.taxId || "").trim(),
-        website: (formData.website || "").trim(),
-        status: formData.status,
-        avatar: formData.avatar,
       }
 
       // Always remove confirmPassword as it's not needed on the server
@@ -847,37 +748,37 @@ export default function ClientsManagement() {
       if (!file) return
 
       // Validate file type
-      if (!file.type.startsWith("image/")) {
-        toast.error("Please upload an image file")
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please upload an image file')
         return
       }
 
       // Validate file size (5MB)
       if (file.size > 5 * 1024 * 1024) {
-        toast.error("File size must be less than 5MB")
+        toast.error('File size must be less than 5MB')
         return
       }
 
       const formData = new FormData()
-      formData.append("file", file)
+      formData.append('file', file)
 
-      const response = await fetch("/api/upload", {
-        method: "POST",
+      const response = await fetch('/api/upload', {
+        method: 'POST',
         body: formData,
       })
 
       if (!response.ok) {
-        throw new Error("Failed to upload image")
+        throw new Error('Failed to upload image')
       }
 
       const { fileUrl } = await response.json()
       // Use functional update to avoid state update during render
-      setFormData((prev) => ({ ...prev, avatar: fileUrl }))
+      setFormData(prev => ({ ...prev, avatar: fileUrl }))
 
-      toast.success("Profile photo uploaded successfully")
+      toast.success('Profile photo uploaded successfully')
     } catch (error) {
-      console.error("Error uploading avatar:", error)
-      toast.error("Failed to upload profile photo")
+      console.error('Error uploading avatar:', error)
+      toast.error('Failed to upload profile photo')
     }
   }
 
@@ -915,7 +816,7 @@ export default function ClientsManagement() {
   }
 
   const openEditDialog = (client: Client) => {
-    setFormData((prev) => ({
+    setFormData(prev => ({
       ...prev,
       name: client.name,
       username: client.username,
@@ -1309,12 +1210,11 @@ export default function ClientsManagement() {
 
   const openNewInvoiceDialog = () => {
     setEditingInvoice(null)
-    const today = new Date().toISOString().split("T")[0];
     setInvoiceFormData({
       invoiceNumber: "",
       amount: 0,
-      status: getInitialInvoiceStatus(today) as Invoice["status"],
-      dueDate: today,
+      status: "Pending",
+      dueDate: new Date().toISOString().split("T")[0],
       notes: "",
     })
     setIsInvoiceDialogOpen(true)
@@ -1443,7 +1343,6 @@ export default function ClientsManagement() {
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                       placeholder="Enter full name"
-                      autoComplete="name"
                       required
                     />
                   </div>
@@ -1454,12 +1353,8 @@ export default function ClientsManagement() {
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
                       placeholder="Choose a username"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      inputMode="text"
-                      autoComplete="username"
                       required
+                      disabled={!!editingClient}
                     />
                   </div>
                 </div>
@@ -1472,11 +1367,6 @@ export default function ClientsManagement() {
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       placeholder="Enter email address"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      inputMode="email"
-                      autoComplete="email"
                       required
                     />
                   </div>
@@ -1487,48 +1377,38 @@ export default function ClientsManagement() {
                       value={formData.phone}
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       placeholder="Enter phone number"
-                      inputMode="tel"
-                      autoComplete="tel"
                       required
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password {!editingClient ? "*" : ""}</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder={
-                        editingClient ? "Enter new password (leave blank to keep current)" : "Enter password"
-                      }
-                      required={!editingClient}
-                      autoComplete="new-password"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      inputMode="text"
-                    />
+                {!editingClient && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Password *</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={formData.password}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                        placeholder="Enter password"
+                        required
+                        autoComplete="new-password"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirmPassword">Confirm Password *</Label>
+                      <Input
+                        id="confirmPassword"
+                        type="password"
+                        value={formData.confirmPassword}
+                        onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                        placeholder="Confirm password"
+                        required
+                        autoComplete="new-password"
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="confirmPassword">Confirm Password {!editingClient ? "*" : ""}</Label>
-                    <Input
-                      id="confirmPassword"
-                      type="password"
-                      value={formData.confirmPassword}
-                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-                      placeholder={editingClient ? "Confirm new password (if changed)" : "Confirm password"}
-                      required={!editingClient}
-                      autoComplete="new-password"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      inputMode="text"
-                    />
-                  </div>
-                </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="company">Company</Label>
                   <Input
@@ -1536,7 +1416,6 @@ export default function ClientsManagement() {
                     value={formData.company}
                     onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                     placeholder="Enter company name"
-                    autoComplete="organization"
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1548,7 +1427,6 @@ export default function ClientsManagement() {
                       onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                       placeholder="Enter street address"
                       rows={2}
-                      autoComplete="address-line1"
                       required
                     />
                   </div>
@@ -1559,7 +1437,6 @@ export default function ClientsManagement() {
                       value={formData.city}
                       onChange={(e) => setFormData({ ...formData, city: e.target.value })}
                       placeholder="Enter city"
-                      autoComplete="address-level2"
                       required
                     />
                   </div>
@@ -1572,7 +1449,6 @@ export default function ClientsManagement() {
                       value={formData.state}
                       onChange={(e) => setFormData({ ...formData, state: e.target.value })}
                       placeholder="State/Province"
-                      autoComplete="address-level1"
                       required
                     />
                   </div>
@@ -1584,9 +1460,6 @@ export default function ClientsManagement() {
                       type="number"
                       onChange={(e) => setFormData({ ...formData, postalCode: e.target.value })}
                       placeholder="Postal Code"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      autoComplete="postal-code"
                       required
                     />
                   </div>
@@ -1598,7 +1471,6 @@ export default function ClientsManagement() {
                       value={formData.projectTotalAmount}
                       onChange={(e) => setFormData({ ...formData, projectTotalAmount: e.target.value })}
                       placeholder="Total Amount"
-                      inputMode="decimal"
                       required
                     />
                   </div>
@@ -1621,8 +1493,6 @@ export default function ClientsManagement() {
                       value={formData.website}
                       onChange={(e) => setFormData({ ...formData, website: e.target.value })}
                       placeholder="https://example.com"
-                      inputMode="url"
-                      autoComplete="url"
                     />
                   </div>
                 </div>
@@ -1631,7 +1501,7 @@ export default function ClientsManagement() {
                   <div className="flex items-center gap-4">
                     {formData.avatar ? (
                       <img
-                        src={formData.avatar || "/placeholder.svg"}
+                        src={formData.avatar}
                         alt="Profile preview"
                         className="w-16 h-16 rounded-full object-cover border"
                       />
@@ -1840,9 +1710,7 @@ export default function ClientsManagement() {
                   <Input
                     id="budget"
                     type="number"
-                    inputMode="numeric"
-                    
-                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    value={projectFormData.budget}
                     onChange={(e) => setProjectFormData({ ...projectFormData, budget: Number(e.target.value) })}
                     placeholder="Enter budget amount"
                   />
@@ -1945,12 +1813,13 @@ export default function ClientsManagement() {
                   <Input
                     id="amount"
                     type="number"
-                    inputMode="numeric"
                     min="0"
                     step="0.01"
-                    onChange={(e) => setInvoiceFormData({ ...invoiceFormData, amount: Number(e.target.value) || 0 })}
+                    value={invoiceFormData.amount}
+                    onChange={(e) =>
+                      setInvoiceFormData({ ...invoiceFormData, amount: Number(e.target.value) || 0 })
+                    }
                     placeholder="0.00"
-                    className="[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     required
                   />
                 </div>
@@ -1968,9 +1837,9 @@ export default function ClientsManagement() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Request">Request</SelectItem>
                       <SelectItem value="Pending">Pending</SelectItem>
                       <SelectItem value="Paid">Paid</SelectItem>
+                      <SelectItem value="Overdue">Overdue</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -2049,6 +1918,7 @@ export default function ClientsManagement() {
                     <TabsTrigger value="projects">Sites</TabsTrigger>
                     <TabsTrigger value="invoices">Invoices</TabsTrigger>
                   </TabsList>
+
 
                   <TabsContent value="overview" className="mt-6 space-y-6 max-h-[70vh] overflow-y-auto pr-2">
                     {/* Quick Stats */}

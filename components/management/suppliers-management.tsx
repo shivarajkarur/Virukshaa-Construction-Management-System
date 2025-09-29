@@ -1755,6 +1755,58 @@ const SuppliersManagement: React.FC = () => {
                             </p>
                           </div>
                         </div>
+
+                        {/* Bank Details */}
+                        {/* <TabsContent value="bank" className="flex-1 overflow-y-auto space-y-6"> */}
+                        <Card className="border-none">
+                          <CardHeader className="flex flex-row items-center justify-between">
+                            <CardTitle className="text-xl font-semibold">🏦 Bank Details</CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-4">
+                            {selectedSupplier.bankDetails?.length ? (
+                              selectedSupplier.bankDetails.map((bd, idx) => (
+                                <Card key={idx} className="p-4 border rounded-lg bg-white">
+                                  <div className="flex items-start justify-between">
+                                    <div className="space-y-1">
+                                      <div className="font-semibold text-base">{bd.accountHolderName}</div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {bd.bankName} {bd.branch && `– ${bd.branch}`}
+                                      </div>
+                                      <div className="text-sm font-mono">{bd.accountNumber}</div>
+                                      <div className="text-xs text-muted-foreground">IFSC: {bd.ifscCode}</div>
+                                      {bd.upiId && (
+                                        <div className="text-xs text-muted-foreground">UPI: {bd.upiId}</div>
+                                      )}
+                                      <div className="text-xs text-muted-foreground">Type: {bd.accountType}</div>
+                                    </div>
+                                    {/* <div className="flex items-center gap-2"> */}
+                                      {/* {bd.isPrimary && ( */}
+                                        {/* <Badge variant="default" className="text-xs">Primary</Badge> */}
+                                      {/* )} */}
+                                      {/* <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => {
+                                          setCurrentBankDetail(bd)
+                                          setIsBankDetailsOpen(true)
+                                        }}
+                                      >
+                                        <Edit3 className="w-4 h-4" />
+                                      </Button> */}
+                                    {/* </div> */}
+                                  </div>
+                                </Card>
+                              ))
+                            ) : (
+                              <div className="text-center py-10 rounded-lg border border-dashed bg-muted/20 space-y-2">
+                                <CreditCard className="w-10 h-10 mx-auto text-muted-foreground mb-1" />
+                                <h4 className="text-lg font-semibold">No Bank Accounts</h4>
+                                <p className="text-sm text-muted-foreground">Add a bank account to manage payments.</p>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                        {/* </TabsContent> */}
                       </div>
                     </CardContent>
                   </Card>
@@ -1882,7 +1934,7 @@ const SuppliersManagement: React.FC = () => {
                                       <Input
                                         id={`unit-${projectId}`}
                                         list={`unit-options-${projectId}`}
-                                   
+
                                         onChange={(e) => updateProjectMaterialInput(projectId, "unit", e.target.value)}
                                         placeholder="Select or type a type/unit"
                                         className="h-9"

@@ -477,7 +477,7 @@ const ReportManagement = () => {
             </div>
           ) : activeTab === 'supplier' ? (
             filteredMaterialRequests.length === 0 ? (
-              <div className="text-center py-12 border rounded-lg">
+              <div className="text-center py-12 border rounded-lg bg-white">
                 <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
                 <h3 className="mt-2 text-sm font-medium">No material requests found</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -583,7 +583,7 @@ const ReportManagement = () => {
               </div>
             )
           ) : reports.length === 0 ? (
-            <div className="text-center py-12 border rounded-lg">
+            <div className="text-center py-12 border rounded-lg bg-white">
               <FileText className="mx-auto h-12 w-12 text-muted-foreground" />
               <h3 className="mt-2 text-sm font-medium">No reports found</h3>
               <p className="mt-1 text-sm text-muted-foreground">
