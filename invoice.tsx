@@ -119,7 +119,7 @@ interface Invoice {
   _id: string
   invoiceNumber: string
   amount: number
-  status: "Pending" | "Paid" | "Overdue"
+  status: "Request" | "Pending" | "Paid" | "Overdue"
   dueDate: string
   createdAt: string
   notes?: string
