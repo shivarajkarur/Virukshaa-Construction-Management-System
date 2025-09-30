@@ -18,6 +18,12 @@ export interface IEmployee extends Document {
   lastPaymentDate?: Date;
   projectId?: mongoose.Types.ObjectId;
   supervisor?: mongoose.Types.ObjectId;
+  assignedProjects?: Array<{
+    projectId: mongoose.Types.ObjectId;
+    supervisorId: mongoose.Types.ObjectId;
+    role?: string;
+    assignedAt?: Date;
+  }>;
 }
 
 const employeeSchema = new Schema<IEmployee>({
@@ -57,7 +63,15 @@ const employeeSchema = new Schema<IEmployee>({
     type: Schema.Types.ObjectId, 
     ref: 'Supervisor',
     default: null
-  }
+  },
+  assignedProjects: [
+    {
+      projectId: { type: Schema.Types.ObjectId, ref: 'Project', required: true },
+      supervisorId: { type: Schema.Types.ObjectId, ref: 'Supervisor', required: true },
+      role: { type: String },
+      assignedAt: { type: Date, default: Date.now },
+    }
+  ]
 }, { timestamps: true });
 
 // Create or retrieve the model to prevent OverwriteModelError.

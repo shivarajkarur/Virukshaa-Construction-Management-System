@@ -289,12 +289,12 @@ function CombinedAttendanceView({
   }, [supervisorId, selectedMonth])
 
   const months = useMemo(() => {
+    const now = new Date()
     return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date()
-      d.setMonth(d.getMonth() - i)
+      const dt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
       return {
-        value: d.toISOString().slice(0, 7),
-        label: d.toLocaleString("default", { month: "long", year: "numeric" }),
+        value: dt.toISOString().slice(0, 7),
+        label: dt.toLocaleString("default", { month: "long", year: "numeric" }),
       }
     })
   }, [])
@@ -390,7 +390,7 @@ function CombinedAttendanceView({
               </SelectTrigger>
               <SelectContent>
                 {months.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
+                  <SelectItem key={`month-${m.value}`} value={m.value}>
                     {m.label}
                   </SelectItem>
                 ))}
@@ -1330,7 +1330,8 @@ export default function SupervisorsPage() {
       }
     })
 
-    const uploadedFiles = (await Promise.all(uploadPromises)).filter(Boolean)
+    // Use type assertion to tell TypeScript that null values have been removed
+    const uploadedFiles = (await Promise.all(uploadPromises)).filter((file): file is NonNullable<typeof file> => file !== null)
 
     setTaskFormData(prev => ({
       ...prev,
@@ -1340,7 +1341,12 @@ export default function SupervisorsPage() {
         url: f.url,
         type: f.type
       }))],
-      filePreviews: [...prev.filePreviews, ...uploadedFiles]
+      filePreviews: [...prev.filePreviews, ...uploadedFiles.map(f => ({
+        name: f.name,
+        size: f.size,
+        url: f.url,
+        type: f.type
+      }))]
     }))
   }, [])
 
@@ -1419,7 +1425,22 @@ export default function SupervisorsPage() {
       endDate: new Date(task.endDate),
       projectId: task.projectId || "",
       documentType: task.documentType || "",
-      documentUrls: task.documentUrls || [],
+      documentUrls: task.documentUrls?.map(doc => {
+        if (typeof doc === 'string') {
+          return {
+            url: doc,
+            name: `Document ${Math.random().toString(36).substring(2, 8)}`,
+            size: 0,
+            type: 'unknown'
+          }
+        }
+        return {
+          url: doc.url,
+          name: doc.name || `Document ${Math.random().toString(36).substring(2, 8)}`,
+          size: 0,
+          type: doc.type || 'unknown'
+        }
+      }) || [],
       files: [],
       filePreviews: task.documentUrls?.map((doc, index) => {
         if (typeof doc === 'string') {
@@ -2829,7 +2850,20 @@ export default function SupervisorsPage() {
                             <div className="flex items-center gap-3">
                               <div className="text-xs text-muted-foreground flex items-center gap-2">
                                 <Briefcase className="w-3 h-3" />
-                                <span>{availableProjects.find((p) => p._id === emp.projectId)?.title || "No project"}</span>
+                                <span>
+                                  {(() => {
+                                    const assignments = (selectedSupervisor?.projectAssignments || []).filter(
+                                      (pa: any) => String(pa.employeeId) === String(emp._id)
+                                    );
+                                    const titles = assignments
+                                      .map((pa: any) =>
+                                        pa.projectTitle ||
+                                        availableProjects.find((p) => String(p._id) === String(pa.projectId))?.title
+                                      )
+                                      .filter(Boolean);
+                                    return titles.length > 0 ? `Projects: ${titles.join(", ")}` : "No project";
+                                  })()}
+                                </span>
                               </div>
                               <div>
                                 <h4 className="font-medium">{emp.name}</h4>

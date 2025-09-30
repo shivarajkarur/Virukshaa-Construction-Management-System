@@ -156,6 +156,7 @@ export default function SupervisorEmployee() {
         endDate: e.endDate,
         address: e.address,
         projectId: e.projectId,
+        assignedProjects: e.assignedProjects || [],
       }))
       setEmployees(mapped)
 
@@ -502,12 +503,44 @@ export default function SupervisorEmployee() {
                     <div className="min-w-0 text-center md:text-left">
                       <h2 className="font-semibold text-xl md:text-2xl leading-tight truncate">{emp.name}</h2>
                       {(emp.role || emp.position) && <p className="text-sm mt-1 text-pretty">{emp.role || emp.position}</p>}
-                      {emp.projectId && (
-                        <div className="mt-1 flex items-center justify-center md:justify-start gap-2 text-xs text-muted-foreground">
-                          <Briefcase className="w-3 h-3" />
-                          <span>Project: {projects.find((p) => p._id === emp.projectId)?.title || "No project"}</span>
-                        </div>
-                      )}
+                      <div className="mt-1 flex items-center justify-center md:justify-start gap-2 text-xs text-muted-foreground">
+                        <Briefcase className="w-3 h-3" />
+                        <span>
+                          {(() => {
+                            // Handle modern assignedProjects array format
+                            const assignedProjects = Array.isArray((emp as any).assignedProjects)
+                              ? (emp as any).assignedProjects
+                              : [];
+                            
+                            // Get project titles from assignedProjects
+                            let titles = assignedProjects
+                              .map((assignment: any) => {
+                                // First try to use projectTitle if it exists in the assignment
+                                if (assignment.projectTitle) return assignment.projectTitle;
+                                
+                                // Otherwise look up the project title from projects array
+                                return projects.find((p) => 
+                                  String(p._id) === String(assignment.projectId)
+                                )?.title;
+                              })
+                              .filter(Boolean);
+                            
+                            // Fallback to legacy single projectId if no titles found
+                            if (titles.length === 0 && (emp as any).projectId) {
+                              const projectTitle = projects.find((p) => 
+                                String(p._id) === String((emp as any).projectId)
+                              )?.title;
+                              
+                              if (projectTitle) titles.push(projectTitle);
+                            }
+                            
+                            // Return formatted project list or "No project" message
+                            return titles.length > 0 
+                              ? `Projects: ${titles.join(', ')}` 
+                              : 'No project';
+                          })()}
+                        </span>
+                      </div>
                     </div>
                     {emp.status && (
                       <Badge variant={getStatusVariant(emp.status)} className="self-center md:self-auto shrink-0 text-xs">

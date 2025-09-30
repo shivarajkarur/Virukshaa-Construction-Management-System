@@ -208,12 +208,13 @@ function CombinedAttendanceView({
   }, [employeeId, selectedMonth])
 
   const months = useMemo(() => {
+    const now = new Date()
     return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date()
-      d.setMonth(d.getMonth() - i)
+      // Anchor to UTC first day of month to avoid timezone rollover duplicates
+      const dt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
       return {
-        value: d.toISOString().slice(0, 7),
-        label: d.toLocaleString("default", { month: "long", year: "numeric" }),
+        value: dt.toISOString().slice(0, 7),
+        label: dt.toLocaleString("default", { month: "long", year: "numeric" }),
       }
     })
   }, [])
@@ -233,9 +234,9 @@ function CombinedAttendanceView({
         const key = date.toISOString().split("T")[0]
         if (record.isLeaveApproved === true) {
           const isPaidLeave = record.isLeavePaid === true || record.isPaid === true
-          map[key] = { status: isPaidLeave ? "paid" : "unpaid", reason: record.leaveReason }
+          map[key] = { status: isPaidLeave ? "paid" : "unpaid", reason: record.leaveReason ?? undefined }
         } else if (record.isLeaveApproved === undefined) {
-          map[key] = { status: "pending", reason: record.leaveReason }
+          map[key] = { status: "pending", reason: record.leaveReason ?? undefined }
         }
       }
     })
@@ -309,7 +310,7 @@ function CombinedAttendanceView({
               </SelectTrigger>
               <SelectContent>
                 {months.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
+                  <SelectItem key={`month-${m.value}`} value={m.value}>
                     {m.label}
                   </SelectItem>
                 ))}

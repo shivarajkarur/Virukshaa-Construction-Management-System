@@ -16,7 +16,7 @@ export async function GET(
     const supervisor = await Supervisor.findById(id)
       .populate({
         path: 'employees',
-        select: 'name email phone role workType status joinDate endDate address position avatar salary projectId',
+        select: 'name email phone role workType status joinDate endDate address position avatar salary projectId assignedProjects',
         options: { lean: true },
       })
       .select('employees')
@@ -110,7 +110,7 @@ export async function POST(
       );
     }
     
-    // Check if employee is already assigned to this project
+    // Check if employee is already assigned to this project (supervisor-side)
     if (supervisor.projectAssignments && supervisor.projectAssignments.some(
       (assignment: any) => String(assignment.employeeId) === String(employeeId) && String(assignment.projectId) === String(projectId)
     )) {
@@ -129,7 +129,7 @@ export async function POST(
       );
     }
 
-    // Add employee to supervisor if not already added
+    // Ensure employee is listed under supervisor if any assignment exists
     const alreadyListed = (supervisor.employees || []).some((e: any) => String(e) === String(employeeId));
     if (!alreadyListed) {
       supervisor.employees.push(employeeId);
@@ -143,16 +143,26 @@ export async function POST(
     supervisor.projectAssignments.push({
       projectId,
       employeeId,
-      projectTitle: project.title,
+      projectTitle: (project as any).title,
       role: role || 'Team Member',
       assignedAt: new Date()
     });
     
     await supervisor.save();
     
-    // Update employee's supervisor and project reference
-    (employee as any).supervisor = supervisor._id;
-    (employee as any).projectId = project._id;
+    // Update employee's assigned projects (project-wise tracking)
+    const hasEmployeeAssignment = (employee as any).assignedProjects?.some(
+      (ap: any) => String(ap.projectId) === String(projectId) && String(ap.supervisorId) === String(supervisor._id)
+    );
+    if (!hasEmployeeAssignment) {
+      (employee as any).assignedProjects = (employee as any).assignedProjects || [];
+      (employee as any).assignedProjects.push({
+        projectId,
+        supervisorId: supervisor._id,
+        role: role || 'Team Member',
+        assignedAt: new Date()
+      });
+    }
     await employee.save();
     
     return NextResponse.json(
@@ -161,7 +171,7 @@ export async function POST(
         projectAssignment: {
           projectId,
           employeeId,
-          projectTitle: project.title,
+          projectTitle: (project as any).title,
           role: role || 'Team Member',
           assignedAt: new Date().toISOString()
         }
@@ -182,7 +192,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { employeeId } = await request.json();
+    const { employeeId, projectId } = await request.json();
 
     if (!employeeId) {
       return NextResponse.json(
@@ -212,36 +222,63 @@ export async function DELETE(
       );
     }
 
-    // Check if employee is actually assigned to this supervisor
-    const isAssigned = supervisor.employees?.some((e: any) => String(e) === String(employeeId));
-    if (!isAssigned) {
-      // Ensure employee's supervisor reference is not stale
-      if (String((employee as any).supervisor || '') === String(supervisor._id)) {
+    // Remove project-specific assignment if projectId is provided
+    if (projectId) {
+      // Remove from supervisor.projectAssignments for this project+employee
+      const beforeCount = (supervisor as any).projectAssignments?.length || 0;
+      (supervisor as any).projectAssignments = (supervisor as any).projectAssignments?.filter(
+        (pa: any) => !(String(pa.employeeId) === String(employeeId) && String(pa.projectId) === String(projectId))
+      ) || [];
+
+      // If employee has no remaining assignments with this supervisor, remove from supervisor.employees
+      const stillHasAssignmentsWithSupervisor = (supervisor as any).projectAssignments?.some(
+        (pa: any) => String(pa.employeeId) === String(employeeId)
+      );
+      if (!stillHasAssignmentsWithSupervisor) {
+        (supervisor as any).employees = (supervisor as any).employees?.filter(
+          (e: any) => String(e) !== String(employeeId)
+        ) || [];
+      }
+      await supervisor.save();
+
+      // Update employee.assignedProjects by removing the specific assignment
+      (employee as any).assignedProjects = (employee as any).assignedProjects?.filter(
+        (ap: any) => !(String(ap.projectId) === String(projectId) && String(ap.supervisorId) === String(supervisor._id))
+      ) || [];
+
+      // If no remaining assignedProjects, clear legacy single fields
+      if (!(employee as any).assignedProjects.length) {
         (employee as any).supervisor = undefined;
         (employee as any).projectId = undefined;
-        await employee.save();
       }
+      await employee.save();
+
       return NextResponse.json(
-        { message: 'Employee is not assigned to this supervisor' },
-        { status: 400 }
+        { message: 'Project assignment removed successfully' },
+        { status: 200 }
       );
     }
 
-    // Remove employee from supervisor's list
-    (supervisor as any).employees = (supervisor as any).employees.filter(
+    // Fallback: if projectId not provided, remove all assignments for this employee under supervisor
+    (supervisor as any).projectAssignments = (supervisor as any).projectAssignments?.filter(
+      (pa: any) => String(pa.employeeId) !== String(employeeId)
+    ) || [];
+    (supervisor as any).employees = (supervisor as any).employees?.filter(
       (e: any) => String(e) !== String(employeeId)
-    );
+    ) || [];
     await supervisor.save();
 
-    // Clear employee's supervisor reference if it matches
-    if (String((employee as any).supervisor || '') === String(supervisor._id)) {
+    (employee as any).assignedProjects = (employee as any).assignedProjects?.filter(
+      (ap: any) => String(ap.supervisorId) !== String(supervisor._id)
+    ) || [];
+    if (!(employee as any).assignedProjects.length) {
       (employee as any).supervisor = undefined;
       (employee as any).projectId = undefined;
-      await employee.save();
     }
+    await employee.save();
 
     return NextResponse.json(
-      { message: 'Employee unassigned successfully' },
+      { message: 'Employee unassigned from supervisor successfully' },
       { status: 200 }
     );
   } catch (error) {
