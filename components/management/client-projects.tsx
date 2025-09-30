@@ -242,28 +242,28 @@ export default function ClientProjectsManagement() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      {/* Header - Responsive */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-3">
         <div>
-          <h2 className="text-2xl font-bold">My Projects</h2>
-          <p className="text-muted-foreground">Track and manage your construction projects</p>
+          <h2 className="text-xl sm:text-2xl font-bold">My Projects</h2>
+          <p className="text-muted-foreground text-sm sm:text-base">Track and manage your construction projects</p>
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      {/* Filters - Responsive */}
+      <div className="flex flex-col sm:flex-row gap-4 p-3 bg-background rounded-lg border">
         <div className="flex-1">
           <Input
             placeholder="Search projects..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-sm"
+            className="w-full max-w-sm h-12 px-4"
           />
         </div>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="px-3 py-2 border rounded-md"
+          className="px-4 py-3 border rounded-md h-12 w-full sm:w-auto"
         >
           <option value="all">All Status</option>
           <option value="on track">On Track</option>
@@ -281,46 +281,46 @@ export default function ClientProjectsManagement() {
         <div className="text-center py-8 text-sm text-red-600">{error}</div>
       )}
 
-      {/* Projects Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Projects Grid - Responsive layout */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
         {filteredProjects.map((project) => (
           <Card key={project.id} className="h-fit">
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <CardTitle className="text-lg">{project.name}</CardTitle>
+                  <CardTitle className="text-lg sm:text-xl">{project.name}</CardTitle>
                   <CardDescription className="mt-1">{project.description}</CardDescription>
                 </div>
-                <Badge className={getStatusColor(project.status)}>{project.status}</Badge>
+                <Badge className={`${getStatusColor(project.status)} text-xs sm:text-sm px-3 py-1`}>{project.status}</Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-5 p-4 sm:p-5">
               {/* Progress */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span>Progress</span>
-                  <span>{computeDurationProgress(project.startDate, project.expectedCompletion, project.progress)}%</span>
+                  <span className="text-sm sm:text-base">Progress</span>
+                <span className="text-sm sm:text-base">{computeDurationProgress(project.startDate, project.expectedCompletion, project.progress)}%</span>
                 </div>
                 <Progress value={computeDurationProgress(project.startDate, project.expectedCompletion, project.progress)} />
               </div>
 
               {/* Project Details */}
-              <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm sm:text-base space-y-3">
                 {/* <div className="flex items-center gap-2">
                   <span className="text-muted-foreground">Status:</span>
                   <Badge className={getStatusColor(project.status)}>{project.status}</Badge>
                 </div> */}
-                <div className="flex items-center gap-2">
-                  <IndianRupee className="w-4 h-4 text-muted-foreground" />
+                <div className="flex items-center gap-2 py-1">
+                  <IndianRupee className="w-5 h-5 text-muted-foreground" />
                   <span>Budget: {project.budget}</span>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                <div className="flex items-center gap-2 py-1">
+                  <Calendar className="w-5 h-5 text-muted-foreground" />
                   <span>Start Date: {formatDate(project.startDate)}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                <div className="flex items-center gap-2 py-1">
+                  <Calendar className="w-5 h-5 text-muted-foreground" />
                   <span>End Date: {formatDate(project.expectedCompletion)}</span>
                 </div>
 
@@ -328,16 +328,11 @@ export default function ClientProjectsManagement() {
                   <User className="w-4 h-4 text-muted-foreground" />
                   <span>Manager: {project.manager || '-'}</span>
                 </div>
-                <div className="flex items-start gap-2">
-                  <span className="text-muted-foreground">Site Address:</span>
+                <div className="flex items-start gap-2 py-1 sm:col-span-2">
+                  <span className="text-muted-foreground whitespace-nowrap">Site Address:</span>
                   <span className="leading-snug">
-                    {project.address || '-'}
-                    {project.city || project.state || project.postalCode ? (
-                      <>
-                        <br />
-                        {[project.city, project.state, project.postalCode].filter(Boolean).join(', ')}
-                      </>
-                    ) : null}
+                    {project.address || '-'}<br />
+                    {[project.city, project.state, project.postalCode].filter(Boolean).join(', ')}
                   </span>
                 </div>
               </div>
@@ -480,8 +475,8 @@ export default function ClientProjectsManagement() {
       </div>
 
       {filteredProjects.length === 0 && (
-        <div className="text-center py-8">
-          <p className="text-muted-foreground">No projects found matching your criteria.</p>
+        <div className="text-center py-12 px-4">
+          <p className="text-muted-foreground text-base">No projects found matching your criteria.</p>
         </div>
       )}
     </div>

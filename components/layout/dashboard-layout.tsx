@@ -327,7 +327,7 @@ export default function DashboardLayout({
         <header className="bg-white shadow-sm px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <h1 className="text-xl relative left-10 font-semibold">
-              {userRole.charAt(0).toUpperCase() + userRole.slice(1)} - {getSectionTitle()}
+              <span className="hidden lg:inline">{userRole.charAt(0).toUpperCase() + userRole.slice(1)} -</span> {getSectionTitle()}
             </h1>
           </div>
 

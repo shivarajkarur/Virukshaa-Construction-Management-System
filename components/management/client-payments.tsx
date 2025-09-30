@@ -72,7 +72,7 @@ export default function ClientPaymentsManagement() {
   }, [client?._id, queryClientId])
 
   const currency = (n: number) =>
-    new Intl.NumberFormat(undefined, { style: "currency", currency: "USD" }).format(n)
+    new Intl.NumberFormat(undefined, { style: "currency", currency: "INR" }).format(n)
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -90,71 +90,71 @@ export default function ClientPaymentsManagement() {
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "Paid":
-        return <CheckCircle className="w-4 h-4 text-green-600" />
+        return <CheckCircle className="w-5 h-5 text-green-600" />
       case "Pending":
-        return <Clock className="w-4 h-4 text-yellow-600" />
+        return <Clock className="w-5 h-5 text-yellow-600" />
       case "Overdue":
-        return <AlertCircle className="w-4 h-4 text-red-600" />
+        return <AlertCircle className="w-5 h-5 text-red-600" />
       default:
-        return <Clock className="w-4 h-4 text-gray-600" />
+        return <Clock className="w-5 h-5 text-gray-600" />
     }
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="space-y-6 p-2 sm:p-0">
+      {/* Header - Responsive */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 p-3">
         <div>
-          <h2 className="text-2xl font-bold">Payments</h2>
-          <p className="text-muted-foreground">Manage your project payments and invoices</p>
+          <h2 className="text-xl sm:text-2xl font-bold">Payments</h2>
+          <p className="text-muted-foreground text-sm sm:text-base">Manage your project payments and invoices</p>
         </div>
       </div>
       {/* Invoices List */}
       <Card>
         <CardHeader>
           <CardTitle>Invoices</CardTitle>
-          <CardDescription>All invoices created for you by the admin</CardDescription>
+          <CardDescription className="text-sm sm:text-base">All invoices created for you by the admin</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-4 sm:p-5">
           <div className="space-y-4">
             {loading && (
-              <div className="p-4 text-sm text-muted-foreground">Loading invoices...</div>
+              <div className="p-6 text-center text-sm sm:text-base text-muted-foreground">Loading invoices...</div>
             )}
             {!loading && invoices.length === 0 && (
-              <div className="p-4 text-sm text-muted-foreground">
+              <div className="p-6 text-center text-sm sm:text-base text-muted-foreground">
                 No invoices available yet{!client?._id && queryClientId ? ' (using clientId from URL)' : ''}
               </div>
             )}
 
             {invoices.map((inv) => (
-              <div key={inv._id} className="p-4 border rounded-lg">
-                <div className="flex items-start justify-between mb-3">
+              <div key={inv._id} className="p-4 sm:p-5 border rounded-lg shadow-sm">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-3 gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
-                      <h4 className="font-medium">Invoice {inv.invoiceNumber}</h4>
-                      <Badge className={getStatusColor(inv.status)}>
+                      <h4 className="font-medium text-base sm:text-lg">Invoice {inv.invoiceNumber}</h4>
+                      <Badge className={`${getStatusColor(inv.status)} text-xs sm:text-sm px-3 py-1`}>
                         {getStatusIcon(inv.status)}
                         <span className="ml-1">{inv.status}</span>
                       </Badge>
                     </div>
-                    {inv.notes && <p className="text-xs text-muted-foreground">{inv.notes}</p>}
+                    {inv.notes && <p className="text-sm text-muted-foreground">{inv.notes}</p>}
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-semibold">{currency(inv.amount)}</p>
+                    <p className="text-lg sm:text-xl font-semibold">{currency(inv.amount)}</p>
                     <p className="text-sm text-muted-foreground">Due: {format(new Date(inv.dueDate), "PP")}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-2 border-t">
                   <span className="text-sm text-muted-foreground">Invoice: {inv.invoiceNumber}</span>
-                  {/* <div className="flex gap-2">
-                    <Button variant="outline" size="sm">
-                      <Eye className="w-4 h-4 mr-2" />
+                  {/* <div className="flex gap-2 w-full sm:w-auto">
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto py-2">
+                      <Eye className="w-5 h-5 mr-2" />
                       View Invoice
                     </Button>
                     {inv.status === "Pending" && (
-                      <Button size="sm">
-                        <CreditCard className="w-4 h-4 mr-2" />
+                      <Button size="sm" className="w-full sm:w-auto py-2">
+                        <CreditCard className="w-5 h-5 mr-2" />
                         Pay Now
                       </Button>
                     )}

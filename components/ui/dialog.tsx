@@ -34,7 +34,15 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
   const generatedDescriptionId = React.useId()
+  const generatedTitleId = React.useId()
   const describedBy = (props as any)["aria-describedby"]
+  const labelledBy = (props as any)["aria-labelledby"]
+
+  // Check if children contain a DialogTitle
+  const hasTitle = React.Children.toArray(children).some(
+    child => React.isValidElement(child) && 
+           typeof child.type === 'function' && (child.type as any).displayName === 'DialogTitle'
+  )
 
   return (
     <DialogPortal>
@@ -46,6 +54,7 @@ const DialogContent = React.forwardRef<
           className
         )}
         aria-describedby={describedBy ?? generatedDescriptionId}
+        aria-labelledby={labelledBy ?? (hasTitle ? undefined : generatedTitleId)}
         {...props}
       >
         {/* Fallback description for screen readers when none is provided */}
@@ -54,6 +63,14 @@ const DialogContent = React.forwardRef<
             Details about this dialog.
           </p>
         )}
+        
+        {/* Fallback title for screen readers when none is provided */}
+        {!hasTitle && (
+          <DialogPrimitive.Title id={generatedTitleId} className="sr-only">
+            Dialog
+          </DialogPrimitive.Title>
+        )}
+        
         {children}
         <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
           <X className="h-4 w-4" />

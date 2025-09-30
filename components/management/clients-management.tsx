@@ -1348,7 +1348,7 @@ export default function ClientsManagement() {
               <Users className="h-5 w-5 sm:h-4 sm:w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl sm:text-2xl font-bold">{totalClients}</div>
+              <div className="text-sm sm:text-2xl font-bold">{totalClients}</div>
               <p className="text-sm sm:text-xs text-muted-foreground">Registered clients</p>
             </CardContent>
           </Card>
@@ -1358,7 +1358,7 @@ export default function ClientsManagement() {
               <CheckCircle className="h-5 w-5 sm:h-4 sm:w-4 text-green-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl sm:text-2xl font-bold text-green-600">{activeClients}</div>
+              <div className="text-sm sm:text-2xl font-bold text-green-600">{activeClients}</div>
               <p className="text-sm sm:text-xs text-muted-foreground">Currently active</p>
             </CardContent>
           </Card>
@@ -1368,7 +1368,7 @@ export default function ClientsManagement() {
               <XCircle className="h-5 w-5 sm:h-4 sm:w-4 text-red-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl sm:text-2xl font-bold text-red-600">{inactiveClients}</div>
+              <div className="text-sm sm:text-2xl font-bold text-red-600">{inactiveClients}</div>
               <p className="text-sm sm:text-xs text-muted-foreground">Currently inactive</p>
             </CardContent>
           </Card>
@@ -1378,7 +1378,7 @@ export default function ClientsManagement() {
               <IndianRupee className="h-5 w-5 sm:h-4 sm:w-4 text-blue-600" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl sm:text-2xl font-bold text-blue-600">₹{totalRevenue.toLocaleString()}</div>
+              <div className="text-sm sm:text-2xl font-bold text-blue-600">₹{totalRevenue.toLocaleString()}</div>
               <p className="text-sm sm:text-xs text-muted-foreground">Total project value</p>
             </CardContent>
           </Card>

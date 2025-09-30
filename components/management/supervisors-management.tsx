@@ -1862,7 +1862,7 @@ export default function SupervisorsPage() {
                   className="shrink-0"
                 />
                 <div>
-                  <h3 className="font-semibold text-lg">{supervisor.name}</h3>
+                  <h3 className="font-semibold text-sm lg:text-lg">{supervisor.name}</h3>
                   <div className="mt-2" onClick={(e) => e.stopPropagation()}>
                     <Select
                       value={supervisor.attendance?.status ?? undefined}
@@ -1908,7 +1908,7 @@ export default function SupervisorsPage() {
                   </div>
                 </div>
               </div>
-              <Badge className={getStatusBadgeClass(supervisor.status)}>{supervisor.status}</Badge>
+              <Badge className={`text-xs  relative right-5 lg:right-0 ${getStatusBadgeClass(supervisor.status)}`}>{supervisor.status}</Badge>
             </div>
 
             <div className="space-y-2 mb-4">
