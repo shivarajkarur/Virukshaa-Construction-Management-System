@@ -7,12 +7,13 @@ import Project from '@/models/ProjectModel';
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await connectToDB();
+    const { id } = await params;
 
-    const supervisor = await Supervisor.findById(params.id)
+    const supervisor = await Supervisor.findById(id)
       .populate({
         path: 'employees',
         select: 'name email phone role workType status joinDate endDate address position avatar salary projectId',
@@ -70,10 +71,10 @@ export async function GET(
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { employeeId, projectId } = await request.json();
+    const { employeeId, projectId, role } = await request.json();
     
     if (!employeeId) {
       return NextResponse.json(
@@ -89,9 +90,10 @@ export async function POST(
     }
     
     await connectToDB();
+    const { id } = await params;
     
     // Check if supervisor exists
-    const supervisor = await Supervisor.findById(params.id);
+    const supervisor = await Supervisor.findById(id);
     if (!supervisor) {
       return NextResponse.json(
         { message: 'Supervisor not found' },
@@ -108,16 +110,18 @@ export async function POST(
       );
     }
     
-    // Check if employee is already assigned
-    if (supervisor.employees.includes(employeeId)) {
+    // Check if employee is already assigned to this project
+    if (supervisor.projectAssignments && supervisor.projectAssignments.some(
+      (assignment: any) => String(assignment.employeeId) === String(employeeId) && String(assignment.projectId) === String(projectId)
+    )) {
       return NextResponse.json(
-        { message: 'Employee is already assigned to this supervisor' },
+        { message: 'Employee is already assigned to this project' },
         { status: 400 }
       );
     }
     
     // Validate project exists
-    const project = await Project.findById(projectId).select('_id').lean();
+    const project = await Project.findById(projectId).select('_id title').lean();
     if (!project) {
       return NextResponse.json(
         { message: 'Project not found' },
@@ -125,8 +129,25 @@ export async function POST(
       );
     }
 
-    // Add employee to supervisor
-    supervisor.employees.push(employeeId);
+    // Add employee to supervisor if not already added
+    const alreadyListed = (supervisor.employees || []).some((e: any) => String(e) === String(employeeId));
+    if (!alreadyListed) {
+      supervisor.employees.push(employeeId);
+    }
+    
+    // Add project assignment with role
+    if (!supervisor.projectAssignments) {
+      supervisor.projectAssignments = [];
+    }
+    
+    supervisor.projectAssignments.push({
+      projectId,
+      employeeId,
+      projectTitle: project.title,
+      role: role || 'Team Member',
+      assignedAt: new Date()
+    });
+    
     await supervisor.save();
     
     // Update employee's supervisor and project reference
@@ -135,7 +156,16 @@ export async function POST(
     await employee.save();
     
     return NextResponse.json(
-      { message: 'Employee assigned successfully' },
+      { 
+        message: 'Employee assigned successfully',
+        projectAssignment: {
+          projectId,
+          employeeId,
+          projectTitle: project.title,
+          role: role || 'Team Member',
+          assignedAt: new Date().toISOString()
+        }
+      },
       { status: 200 }
     );
   } catch (error) {
@@ -149,7 +179,7 @@ export async function POST(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { employeeId } = await request.json();
@@ -162,9 +192,10 @@ export async function DELETE(
     }
 
     await connectToDB();
+    const { id } = await params;
 
     // Check if supervisor exists
-    const supervisor = await Supervisor.findById(params.id);
+    const supervisor = await Supervisor.findById(id);
     if (!supervisor) {
       return NextResponse.json(
         { message: 'Supervisor not found' },

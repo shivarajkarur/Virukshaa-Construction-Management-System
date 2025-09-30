@@ -468,11 +468,11 @@ export default function ClientDashboard() {
                       Welcome back, {client.name?.split(' ')[0] || 'Valued Client'}!
                     </h1>
                     <p className="text-gray-600">
-                      {client.company ? `Here's an overview of your projects at ${client.company}.` : "Here's an overview of your construction projects and recent activity."}
+                     Here's an overview of your construction projects and recent activity.
                     </p>
                   </div>
                   {client.avatar && (
-                    <div className="h-16 w-16 rounded-full bg-white border-2 border-blue-200 overflow-hidden">
+                    <div className="h-20 w-20 rounded-full bg-white border-2 border-blue-200 overflow-hidden">
                       <img
                         src={client.avatar}
                         alt={client.name || 'Client'}
@@ -547,7 +547,7 @@ export default function ClientDashboard() {
                     <div className="flex items-center justify-between">
                       <div>
                         <CardTitle className="text-xl">My Projects</CardTitle>
-                        <CardDescription>Overview of your actijhkhkhve construction projects</CardDescription>
+                        <CardDescription>Overview of your construction projects</CardDescription>
                       </div>
                       <Button variant="outline" size="sm" onClick={() => setActiveSection('projects')}>
                         View All

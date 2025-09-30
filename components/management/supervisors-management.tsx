@@ -624,6 +624,9 @@ export default function SupervisorsPage() {
   const [loadingEmployees, setLoadingEmployees] = useState(false)
   const [isEmployeeAssignOpen, setIsEmployeeAssignOpen] = useState(false)
   const [supervisorEmployees, setSupervisorEmployees] = useState<Employee[]>([])
+  // Employee assignment helpers
+  const [assignmentConflicts, setAssignmentConflicts] = useState<string[]>([])
+  const [selectedEmployeeRole, setSelectedEmployeeRole] = useState<string>("Team Member")
   const [detailTab, setDetailTab] = useState<'overview' | 'tasks' | 'team'>('overview')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
@@ -1788,25 +1791,87 @@ export default function SupervisorsPage() {
   const handleEmployeeAssign = useCallback(
     async (employeeId: string) => {
       if (!selectedSupervisor?._id || !selectedAssignProjectId) return
+      
+      // Check for potential conflicts
+      const conflicts = [];
+      const existingAssignments = selectedSupervisor.projectAssignments || [];
+      const projectTitle = availableProjects.find(p => p._id === selectedAssignProjectId)?.title || 'Unknown Project';
+      
+      // Clear previous conflicts
+      setAssignmentConflicts([]);
+      
+      // Check if employee is already assigned to this project
+      const hasExistingAssignment = existingAssignments.some(
+        assignment => assignment.projectId === selectedAssignProjectId && assignment.employeeId === employeeId
+      );
+      
+      if (hasExistingAssignment) {
+        conflicts.push(`This employee is already assigned to ${projectTitle}`);
+      }
+      
+      // If conflicts exist, show them but allow the user to proceed
+      if (conflicts.length > 0) {
+        setAssignmentConflicts(conflicts);
+        // We don't return here to allow the user to proceed if they want
+      }
+      
       const loadingToast = toast.loading("Assigning employee...")
       try {
         const res = await fetch(`/api/supervisors/${selectedSupervisor._id}/employees`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ employeeId, projectId: selectedAssignProjectId }),
+          body: JSON.stringify({ 
+            employeeId, 
+            projectId: selectedAssignProjectId,
+            role: selectedEmployeeRole || "Team Member" 
+          }),
         })
         if (!res.ok) throw new Error(await res.text())
+        
         const assignedFromList = availableEmployees.find((e) => e._id === employeeId)
+        
         if (assignedFromList) {
-          setSupervisorEmployees((prev) => [...prev, { ...assignedFromList, projectId: selectedAssignProjectId }])
+          // Update supervisorEmployees with the new assignment
+          setSupervisorEmployees((prev) => [...prev, assignedFromList])
+          
+          // Update the supervisor's project assignments in state
+          if (selectedSupervisor) {
+            const updatedSupervisor = {
+              ...selectedSupervisor,
+              projectAssignments: [
+                ...(selectedSupervisor.projectAssignments || []),
+                {
+                  projectId: selectedAssignProjectId,
+                  employeeId: employeeId,
+                  projectTitle,
+                  role: selectedEmployeeRole || "Team Member",
+                  assignedAt: new Date().toISOString()
+                }
+              ]
+            };
+            
+            // Update the supervisor in the list
+            setSupervisors(prevSupervisors => 
+              prevSupervisors.map(s => 
+                s._id === selectedSupervisor._id ? updatedSupervisor : s
+              )
+            );
+            
+            // Update the selected supervisor
+            setSelectedSupervisor(updatedSupervisor);
+          }
         } else if (selectedSupervisor?._id) {
           // Fallback: refetch assigned employees if we don't have the object locally
           await fetchAssignedEmployees(selectedSupervisor._id)
         }
+        
         // Remove from available list
         setAvailableEmployees((prev) => prev.filter((e) => e._id !== employeeId))
         toast.dismiss(loadingToast)
-        toast.success(`${assignedFromList?.name ?? "Employee"} assigned successfully`)
+        toast.success(`${assignedFromList?.name ?? "Employee"} assigned to ${projectTitle} as ${selectedEmployeeRole || "Team Member"}`)
+        
+        // Clear conflicts after successful assignment
+        setAssignmentConflicts([])
         // Optionally close the dialog or clear selection
         // setIsEmployeeAssignOpen(false)
       } catch (e: any) {

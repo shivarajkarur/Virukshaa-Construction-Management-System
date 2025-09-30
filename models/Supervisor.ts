@@ -14,6 +14,13 @@ export interface ISupervisor extends Document {
   lastPaymentDate?: Date;
   avatar?: string;
   employees: mongoose.Types.ObjectId[];
+  projectAssignments?: {
+    projectId: mongoose.Types.ObjectId;
+    employeeId: mongoose.Types.ObjectId;
+    projectTitle: string;
+    role: string;
+    assignedAt: Date;
+  }[];
 }
 
 const supervisorSchema = new Schema<ISupervisor>({
@@ -33,10 +40,13 @@ const supervisorSchema = new Schema<ISupervisor>({
   dueAmount: { type: Number, default: 0 },
   lastPaymentDate: { type: Date },
   avatar: { type: String },
-  employees: [{ 
-    type: Schema.Types.ObjectId, 
-    ref: 'Employee',
-    default: []
+  employees: [{ type: Schema.Types.ObjectId, ref: 'Employee' }],
+  projectAssignments: [{
+    projectId: { type: Schema.Types.ObjectId, ref: 'Project', required: true },
+    employeeId: { type: Schema.Types.ObjectId, ref: 'Employee', required: true },
+    projectTitle: { type: String },
+    role: { type: String, default: 'Team Member' },
+    assignedAt: { type: Date, default: Date.now }
   }]
 }, { timestamps: true });
 
