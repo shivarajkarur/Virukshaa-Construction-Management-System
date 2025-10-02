@@ -193,17 +193,17 @@ export default function SupervisorDashboard() {
                   </div>
                 </CardContent>
               </Card>
-              <Card>
+              {/* <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">Safety Issues</CardTitle>
                   <AlertTriangle className="h-4 w-4 text-red-600" />
                 </CardHeader>
-                <CardContent>
+                 <CardContent>
                   <div className="text-2xl font-bold flex items-center gap-2">
                     {statsLoading ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /> : stats.safetyIssues}
                   </div>
-                </CardContent>
-              </Card>
+                </CardContent> 
+              </Card> */}
             </div>
 
             {/* Removed Daily Log and Attendance widgets from the dashboard view */}

@@ -588,11 +588,29 @@ export default function EmployeesManagement() {
       const now = new Date()
       const timestamp = now.toISOString()
 
-      const response = await fetch("/api/attendance/monthly-employees", {
+      // Determine effective projectId for this employee
+      const assigned = Array.isArray((employee as any).assignedProjects) ? (employee as any).assignedProjects : []
+      let effectiveProjectId: string | null = null
+      if (assigned.length === 1) {
+        effectiveProjectId = String(assigned[0].projectId)
+      } else if ((employee as any).projectId) {
+        effectiveProjectId = String((employee as any).projectId)
+      } else {
+        toast({
+          title: "Select project",
+          description: "Employee has multiple/no assignments. Please assign or select a project before marking attendance.",
+          variant: "destructive",
+        })
+        return false
+      }
+
+      // Use project-scoped attendance endpoint
+      const response = await fetch("/api/attendance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           employeeId,
+          projectId: effectiveProjectId,
           date: dateStr,
           status,
           leaveReason,
@@ -670,13 +688,32 @@ export default function EmployeesManagement() {
         return
       }
 
-      const records: AttendanceRecord[] = body.data || []
-      const attMap = new Map<string, AttendanceRecord>()
+      const records: any[] = body.data || []
+      // Build a map of employeeId -> preferred projectId
+      const preferredProjectByEmployee = new Map<string, string | null>()
+      for (const emp of employees) {
+        const assigned = Array.isArray((emp as any).assignedProjects) ? (emp as any).assignedProjects : []
+        let effectiveProjectId: string | null = null
+        if (assigned.length === 1) effectiveProjectId = String(assigned[0].projectId)
+        else if ((emp as any).projectId) effectiveProjectId = String((emp as any).projectId)
+        preferredProjectByEmployee.set(emp._id, effectiveProjectId)
+      }
+
+      // For each employee, pick the attendance record that matches preferred projectId
+      const attMap = new Map<string, any>()
       for (const rec of records) {
-        const eid =
-          typeof rec.employeeId === "string" ? rec.employeeId : (rec.employeeId as any)?._id || String(rec.employeeId)
+        const eid = typeof rec.employeeId === "string" ? rec.employeeId : (rec.employeeId as any)?._id || String(rec.employeeId)
         if (!eid) continue
-        attMap.set(String(eid), rec)
+        const recProjectId = String((rec as any).projectId || '')
+        const preferred = preferredProjectByEmployee.get(String(eid)) || null
+        if (preferred) {
+          if (recProjectId === String(preferred)) {
+            attMap.set(String(eid), rec)
+          }
+        } else {
+          // If no preferred project, fallback to first seen record
+          if (!attMap.has(String(eid))) attMap.set(String(eid), rec)
+        }
       }
 
       setEmployees((prev) =>
@@ -712,22 +749,38 @@ export default function EmployeesManagement() {
       const dateStr = getTodayDateStr()
       const res = await fetch(`/api/employee-shifts?date=${dateStr}`, { cache: "no-store" })
       if (!res.ok) return
-      const docs: Array<{ employeeId: string; shifts: number }> = await res.json()
+      const docs: Array<{ employeeId: string; shifts: number; projectId?: string }> = await res.json()
       const map: Record<string, number> = {}
-      
+
+      // Precompute preferred project per employee
+      const preferredProjectByEmployee: Record<string, string | null> = {}
+      for (const emp of employees) {
+        const assigned = Array.isArray((emp as any).assignedProjects) ? (emp as any).assignedProjects : []
+        let effectiveProjectId: string | null = null
+        if (assigned.length === 1) effectiveProjectId = String(assigned[0].projectId)
+        else if ((emp as any).projectId) effectiveProjectId = String((emp as any).projectId)
+        preferredProjectByEmployee[emp._id] = effectiveProjectId
+      }
+
       // Track if any shifts were updated externally
       let externalUpdates = false
-      
+
       for (const d of docs) {
         // d.employeeId may be object when populated; handle both
         const id = typeof (d as any).employeeId === "object" ? (d as any).employeeId._id : d.employeeId
         const newShift = clampShift((d as any).shifts ?? 0)
-        
+        const docProjectId = String((d as any).projectId || '')
+        const preferred = preferredProjectByEmployee[id] || null
+        // Only include shifts that match the employee's preferred project
+        if (preferred && docProjectId && docProjectId !== String(preferred)) {
+          continue
+        }
+
         // Check if this is an external update (shift differs from current local state)
         if (shiftsToday[id] !== newShift) {
           externalUpdates = true
         }
-        
+
         map[id] = newShift
       }
       
@@ -760,11 +813,18 @@ export default function EmployeesManagement() {
   const saveEmployeeShift = async (emp: Employee, count: number) => {
     try {
       const dateStr = getTodayDateStr()
+      // Determine effective projectId for this employee
+      const assigned = Array.isArray((emp as any).assignedProjects) ? (emp as any).assignedProjects : []
+      let effectiveProjectId: string | null = null
+      if (assigned.length === 1) effectiveProjectId = String(assigned[0].projectId)
+      else if ((emp as any).projectId) effectiveProjectId = String((emp as any).projectId)
+
       await fetch("/api/employee-shifts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           employeeId: emp._id,
+          ...(effectiveProjectId ? { projectId: effectiveProjectId } : {}),
           date: dateStr,
           shifts: clampShift(count),
           perShiftSalary: emp.salary || 0,
@@ -1173,7 +1233,19 @@ export default function EmployeesManagement() {
                                 {employee.attendance.status === "Absent" && (
                                   <XCircle className="w-3 h-3 text-red-600" />
                                 )}
-                                <span className="text-sm font-medium">{employee.attendance.status}</span>
+                                <span className="text-sm font-medium">
+                                  {employee.attendance?.status || "Set Status"}
+                                </span>
+                                {Array.isArray((employee as any).assignedProjects) && 
+                                  (employee as any).assignedProjects.length > 0 && (
+                                  <div className="text-xs text-gray-600 mt-1">
+                                    {(employee as any).assignedProjects.map((assignment: any, index: number) => (
+                                      <span key={index} className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded mr-1">
+                                        {assignment.projectTitle || "Project"}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
                               </>
                             ) : (
                               <SelectValue placeholder="Set Status" />

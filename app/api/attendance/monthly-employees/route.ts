@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import connectToDB from "@/lib/db";
 import Attendance from "@/models/Attendance";
 import Employee from "@/models/EmployeeModel";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 
 // POST: Mark attendance for monthly employees only
 export async function POST(req: NextRequest) {
   await connectToDB();
   try {
+    // Defensive index migration: drop legacy unique index without projectId and ensure correct compound index
+    try {
+      const existing = await Attendance.collection.indexes().catch(() => [] as any);
+      const hasLegacyEmpDate = Array.isArray(existing) && existing.some((idx: any) => idx?.name === 'employeeId_1_date_1');
+      if (hasLegacyEmpDate) {
+        await Attendance.collection.dropIndex('employeeId_1_date_1').catch(() => null);
+      }
+      await Attendance.collection.createIndex({ employeeId: 1, projectId: 1, date: 1 }, { name: 'employeeId_1_projectId_1_date_1', unique: true }).catch(() => null);
+    } catch (_) {}
     // Check authentication
     const session = await getServerSession(authOptions);
     
@@ -17,16 +26,22 @@ export async function POST(req: NextRequest) {
     }
     const { 
       employeeId, 
+      projectId,
       date, 
       status, 
       leaveReason = null, 
       isPaid = true,
-      timestamp = new Date().toISOString()
+      timestamp = new Date().toISOString(),
+      allowOtherProject = false
     } = await req.json();
 
     // Validate required fields
     if (!employeeId || !date || !status) {
       return NextResponse.json({ message: "Missing required fields" }, { status: 400 });
+    }
+    // Enforce project scoping for employee attendance
+    if (!projectId) {
+      return NextResponse.json({ message: "Project ID is required when marking employee attendance" }, { status: 400 });
     }
 
     // Validate status value
@@ -52,9 +67,45 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Prepare the filter to find existing attendance
+    // Ensure employee is assigned to the provided project
+    const isOnProject = (
+      Array.isArray(employee.assignedProjects) && employee.assignedProjects.some((p: any) => String(p.projectId) === String(projectId))
+    ) || (employee.projectId && String(employee.projectId) === String(projectId));
+    if (!isOnProject) {
+      return NextResponse.json({ message: "Employee not assigned to this project" }, { status: 403 });
+    }
+
+    // Prevent cross-project attendance clashes for the same day
+    // If attendance already exists for this employee on the same date in another project,
+    // either block or apply a default absent record when explicitly allowed.
+    const existingSameDayAnyProject = await Attendance.findOne({
+      employeeId: employee._id,
+      date: attendanceDate
+    });
+
+    if (existingSameDayAnyProject && String(existingSameDayAnyProject.projectId) !== String(projectId)) {
+      if (!allowOtherProject) {
+        return NextResponse.json({
+          success: false,
+          message: "Attendance already set for this employee today in another project",
+          conflictWithProjectId: existingSameDayAnyProject.projectId
+        }, { status: 409 });
+      }
+      // Force default absent for cross-project marking
+      // Overwrite incoming status/leaveReason to maintain consistent business rule
+      // indicating work logged on a different project.
+      // Note: we keep isPaid=false by default for cross-project absent unless caller sets true.
+      const defaultReason = 'Assigned to another project today';
+      (updateObj as any).status = 'Absent';
+      (updateObj as any).leaveReason = defaultReason;
+      (updateObj as any).isLeaveApproved = true;
+      (updateObj as any).isLeavePaid = isPaid === true ? true : false;
+    }
+
+    // Prepare the filter to find existing attendance (project-scoped)
     const filter = { 
       employeeId: employee._id, 
+      projectId, 
       date: attendanceDate 
     };
 
@@ -63,10 +114,10 @@ export async function POST(req: NextRequest) {
       status,
       updatedAt: new Date(),
       processedAt: new Date(),
-      processedBy: session.user.id, // Use the authenticated user's ID
+      processedBy: (session as any).user?.id, // Use the authenticated user's ID
     };
 
-    // Handle leave reason and payment status if provided
+    // Handle leave reason and payment status if provided 
     if (leaveReason !== null) {
       updateObj.leaveReason = leaveReason;
     }
@@ -82,16 +133,42 @@ export async function POST(req: NextRequest) {
       updateObj.leaveReason = '';
     }
 
-    const attendance = await Attendance.findOneAndUpdate(
-      filter,
-      updateObj,
-      { 
-        upsert: true, 
-        new: true, 
-        setDefaultsOnInsert: true,
-        runValidators: true
+    let attendance;
+    try {
+      attendance = await Attendance.findOneAndUpdate(
+        filter,
+        updateObj,
+        { 
+          upsert: true, 
+          new: true, 
+          setDefaultsOnInsert: true,
+          runValidators: true
+        }
+      );
+    } catch (e: any) {
+      // If a duplicate occurs due to legacy index state or race, treat as override
+      if (e && e.code === 11000) {
+        try {
+          attendance = await Attendance.findOneAndUpdate(
+            filter,
+            updateObj,
+            { 
+              upsert: false, 
+              new: true, 
+              runValidators: true
+            }
+          );
+        } catch (e2: any) {
+          return NextResponse.json({ 
+            success: false,
+            message: "Unable to update attendance due to duplicate constraint", 
+            error: e2?.message || String(e2) 
+          }, { status: 409 });
+        }
+      } else {
+        throw e;
       }
-    );
+    }
 
     return NextResponse.json({ 
       success: true, 
@@ -112,14 +189,7 @@ export async function POST(req: NextRequest) {
         }, { status: 400 });
       }
       
-      // MongoDB duplicate key error
-      if ((error as any).code === 11000) {
-        return NextResponse.json({ 
-          success: false,
-          message: "Duplicate attendance record", 
-          error: "An attendance record already exists for this employee on this date" 
-        }, { status: 409 });
-      }
+      // Duplicate handled above by override path; fall through for other errors
     }
     
     // Generic server error
@@ -150,6 +220,7 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const employeeId = searchParams.get("employeeId");
+    const projectId = searchParams.get("projectId");
 
     // Validate date parameters
     if ((startDate && !endDate) || (!startDate && endDate)) {
@@ -207,6 +278,18 @@ export async function GET(req: NextRequest) {
       filter.date = { $gte: today, $lt: tomorrow };
     }
 
+    // Optional project scoping
+    if (projectId) {
+      const mongoose = (await import('mongoose')).default;
+      if (!mongoose.Types.ObjectId.isValid(projectId)) {
+        return NextResponse.json({ 
+          success: false,
+          message: "Invalid project ID format" 
+        }, { status: 400 });
+      }
+      filter.projectId = projectId;
+    }
+
     // Employee filtering
     if (employeeId) {
       // Validate employeeId format
@@ -235,8 +318,18 @@ export async function GET(req: NextRequest) {
         }, { status: 400 });
       }
     } else {
-      // Only fetch records for monthly employees
-      const monthlyEmployees = await Employee.find({ workType: 'Monthly' }).select('_id');
+      // Only fetch records for monthly employees, optionally scoped to project assignment
+      let monthlyQuery: any = { workType: 'Monthly' };
+      if (projectId) {
+        monthlyQuery = {
+          workType: 'Monthly',
+          $or: [
+            { projectId },
+            { 'assignedProjects.projectId': projectId }
+          ]
+        };
+      }
+      const monthlyEmployees = await Employee.find(monthlyQuery).select('_id');
       const monthlyEmployeeIds = monthlyEmployees.map(emp => emp._id);
       filter.employeeId = { $in: monthlyEmployeeIds };
     }

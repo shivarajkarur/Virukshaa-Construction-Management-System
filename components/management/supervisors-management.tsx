@@ -58,6 +58,13 @@ interface Supervisor {
     isLeavePaid?: boolean
     leaveReason?: string
   }
+  projectAssignments?: {
+    projectId: string
+    employeeId: string
+    projectTitle?: string
+    role?: string
+    assignedAt?: string
+  }[]
 }
 
 interface DocumentUrl {
@@ -84,7 +91,7 @@ interface Employee {
   _id: string
   name: string
   email: string
-  position: string
+  role: string
   avatar?: string
 }
 
@@ -109,12 +116,8 @@ interface TaskFormData {
   endDate: Date | undefined
   projectId: string
   documentType: string
-  documentUrls: Array<{
-    url: string
-    name: string
-    size: number
-    type?: string
-  }>
+  documentUrls: string[]
+  file?: File | null
   filePreviews: Array<{
     name: string
     size: number
@@ -145,6 +148,7 @@ const initialTaskFormData: TaskFormData = {
   projectId: "",
   documentType: "",
   documentUrls: [],
+  file: null,
   filePreviews: []
 }
 
@@ -668,10 +672,11 @@ export default function SupervisorsPage() {
   }, [])
 
   // Fetch available (unassigned) employees to assign
-  const fetchAvailableEmployees = useCallback(async (supervisorId: string) => {
+  const fetchAvailableEmployees = useCallback(async (supervisorId: string, projectId?: string) => {
     try {
       setLoadingEmployees(true)
-      const res = await fetch(`/api/employees?availableForSupervisor=${encodeURIComponent(supervisorId)}`)
+      const url = `/api/employees?availableForSupervisor=${encodeURIComponent(supervisorId)}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ''}`
+      const res = await fetch(url)
       if (!res.ok) throw new Error('Failed to fetch available employees')
       const data: Employee[] = await res.json()
       setAvailableEmployees(data)
@@ -1335,12 +1340,7 @@ export default function SupervisorsPage() {
 
     setTaskFormData(prev => ({
       ...prev,
-      documentUrls: [...prev.documentUrls, ...uploadedFiles.map(f => ({
-        name: f.name,
-        size: f.size,
-        url: f.url,
-        type: f.type
-      }))],
+      documentUrls: [...prev.documentUrls, ...uploadedFiles.map(f => f.url)],
       filePreviews: [...prev.filePreviews, ...uploadedFiles.map(f => ({
         name: f.name,
         size: f.size,
@@ -1382,12 +1382,9 @@ export default function SupervisorsPage() {
           endDate: taskFormData.endDate.toISOString(),
           projectId: taskFormData.projectId,
           documentType: taskFormData.documentType,
-          documentUrls: documentUrls.map(url => {
-            if (typeof url === 'string') {
-              return { url }
-            }
-            return url
-          }),
+          documentUrls: documentUrls.map(url => ({
+            url: typeof url === 'string' ? url : (url as DocumentUrl).url
+          })),
           supervisorId: selectedSupervisor._id
         }
 
@@ -1425,23 +1422,10 @@ export default function SupervisorsPage() {
       endDate: new Date(task.endDate),
       projectId: task.projectId || "",
       documentType: task.documentType || "",
-      documentUrls: task.documentUrls?.map(doc => {
-        if (typeof doc === 'string') {
-          return {
-            url: doc,
-            name: `Document ${Math.random().toString(36).substring(2, 8)}`,
-            size: 0,
-            type: 'unknown'
-          }
-        }
-        return {
-          url: doc.url,
-          name: doc.name || `Document ${Math.random().toString(36).substring(2, 8)}`,
-          size: 0,
-          type: doc.type || 'unknown'
-        }
-      }) || [],
-      files: [],
+      documentUrls: task.documentUrls?.map(doc =>
+        typeof doc === 'string' ? doc : doc.url
+      ) || [],
+      file: null,
       filePreviews: task.documentUrls?.map((doc, index) => {
         if (typeof doc === 'string') {
           return {
@@ -1812,49 +1796,49 @@ export default function SupervisorsPage() {
   const handleEmployeeAssign = useCallback(
     async (employeeId: string) => {
       if (!selectedSupervisor?._id || !selectedAssignProjectId) return
-      
+
       // Check for potential conflicts
       const conflicts = [];
       const existingAssignments = selectedSupervisor.projectAssignments || [];
       const projectTitle = availableProjects.find(p => p._id === selectedAssignProjectId)?.title || 'Unknown Project';
-      
+
       // Clear previous conflicts
       setAssignmentConflicts([]);
-      
+
       // Check if employee is already assigned to this project
       const hasExistingAssignment = existingAssignments.some(
         assignment => assignment.projectId === selectedAssignProjectId && assignment.employeeId === employeeId
       );
-      
+
       if (hasExistingAssignment) {
         conflicts.push(`This employee is already assigned to ${projectTitle}`);
       }
-      
+
       // If conflicts exist, show them but allow the user to proceed
       if (conflicts.length > 0) {
         setAssignmentConflicts(conflicts);
         // We don't return here to allow the user to proceed if they want
       }
-      
+
       const loadingToast = toast.loading("Assigning employee...")
       try {
         const res = await fetch(`/api/supervisors/${selectedSupervisor._id}/employees`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            employeeId, 
+          body: JSON.stringify({
+            employeeId,
             projectId: selectedAssignProjectId,
-            role: selectedEmployeeRole || "Team Member" 
+            role: selectedEmployeeRole || "Team Member"
           }),
         })
         if (!res.ok) throw new Error(await res.text())
-        
+
         const assignedFromList = availableEmployees.find((e) => e._id === employeeId)
-        
+
         if (assignedFromList) {
           // Update supervisorEmployees with the new assignment
           setSupervisorEmployees((prev) => [...prev, assignedFromList])
-          
+
           // Update the supervisor's project assignments in state
           if (selectedSupervisor) {
             const updatedSupervisor = {
@@ -1870,14 +1854,14 @@ export default function SupervisorsPage() {
                 }
               ]
             };
-            
+
             // Update the supervisor in the list
-            setSupervisors(prevSupervisors => 
-              prevSupervisors.map(s => 
+            setSupervisors(prevSupervisors =>
+              prevSupervisors.map(s =>
                 s._id === selectedSupervisor._id ? updatedSupervisor : s
               )
             );
-            
+
             // Update the selected supervisor
             setSelectedSupervisor(updatedSupervisor);
           }
@@ -1885,12 +1869,12 @@ export default function SupervisorsPage() {
           // Fallback: refetch assigned employees if we don't have the object locally
           await fetchAssignedEmployees(selectedSupervisor._id)
         }
-        
+
         // Remove from available list
         setAvailableEmployees((prev) => prev.filter((e) => e._id !== employeeId))
         toast.dismiss(loadingToast)
         toast.success(`${assignedFromList?.name ?? "Employee"} assigned to ${projectTitle} as ${selectedEmployeeRole || "Team Member"}`)
-        
+
         // Clear conflicts after successful assignment
         setAssignmentConflicts([])
         // Optionally close the dialog or clear selection
@@ -2833,7 +2817,7 @@ export default function SupervisorsPage() {
                     )}
                   </div>
                 </TabsContent>
-               
+
                 <TabsContent value="team" className="flex-1 overflow-y-auto pr-2 space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-lg font-semibold">Team Members</h3>
@@ -2847,9 +2831,13 @@ export default function SupervisorsPage() {
                       supervisorEmployees.map((emp) => (
                         <Card key={emp._id} className="hover:shadow-md transition-shadow">
                           <CardContent className="p-4 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="text-xs text-muted-foreground flex items-center gap-2">
-                                <Briefcase className="w-3 h-3" />
+                            <div className="flex flex-col items-center gap-3">
+                              <div className="flex justify-start items-center gap-3 w-full">
+                                <h1 className="font-medium">{emp.name}</h1>
+                                <p className="text-sm text-muted-foreground">{emp.role}</p>
+                              </div>
+                              <div className="text-sm  flex items-center gap-2">
+                                {/* <Briefcase className="w-3 h-3" /> */}
                                 <span>
                                   {(() => {
                                     const assignments = (selectedSupervisor?.projectAssignments || []).filter(
@@ -2861,14 +2849,10 @@ export default function SupervisorsPage() {
                                         availableProjects.find((p) => String(p._id) === String(pa.projectId))?.title
                                       )
                                       .filter(Boolean);
-                                    return titles.length > 0 ? `Projects: ${titles.join(", ")}` : "No project";
+                                    return titles.length > 0 ? `Projects:: ${titles.join(", ")}` : "No project";
                                   })()}
                                 </span>
-                              </div>
-                              <div>
-                                <h4 className="font-medium">{emp.name}</h4>
-                                <p className="text-sm text-muted-foreground">{emp.position}</p>
-                              </div>
+                              </div> 
                             </div>
                             <Button variant="destructive" size="sm" onClick={() => handleEmployeeUnassign(emp._id)}>
                               <UserMinus className="w-3 h-3 mr-2" />
@@ -3214,21 +3198,13 @@ export default function SupervisorsPage() {
                 <Button
                   key={employee._id}
                   variant="outline"
-                  className="w-full justify-start bg-transparent"
+                  className="w-full justify-start "
                   onClick={() => handleEmployeeAssign(employee._id)}
                   disabled={!selectedAssignProjectId}
                 >
-                  <div className="flex items-center gap-3">
-                    <Avatar
-                      src={employee.avatar || "/placeholder.svg?height=32&width=32&query=avatar"}
-                      name={employee.name}
-                      size={32}
-                      className="h-8 w-8"
-                    />
-                    <div>
-                      <h4 className="font-medium">{employee.name}</h4>
-                      <p className="text-sm text-muted-foreground">{employee.position}</p>
-                    </div>
+                  <div className="flex justify-between  items-center w-full gap-5">
+                    <h1 className="text-black">{employee.name}</h1>
+                    <h1 className="text-black">{employee.role}</h1>
                   </div>
                 </Button>
               ))}

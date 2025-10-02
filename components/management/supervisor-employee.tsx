@@ -58,25 +58,55 @@ function normalizeAttendanceStatus(value: any, presentFlag?: boolean): Attendanc
   return null
 }
 
+type ProjectWithEmployees = IProject & {
+  employees: SupervisorEmployeeItem[]
+  isActive?: boolean
+}
+
 export default function SupervisorEmployee() {
   const [employees, setEmployees] = useState<SupervisorEmployeeItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState("")
   const [projects, setProjects] = useState<IProject[]>([])
+  const [selectedProject, setSelectedProject] = useState<string | null>(null)
   const supervisorId = typeof window !== "undefined" ? localStorage.getItem("userId") : null
   const role = typeof window !== "undefined" ? localStorage.getItem("userRole") : null
   // Shift management state keyed by employeeId
   const [shiftData, setShiftData] = useState<Record<string, { shifts: number; perShiftSalary: number; totalPay?: number }>>({})
+  // Loading flag to avoid showing zeroes during initial fetch
+  const [isShiftLoading, setIsShiftLoading] = useState<boolean>(false)
+  // Attendance state scoped per project and employee, keyed by projectId_employeeId
+  const [attendanceData, setAttendanceData] = useState<Record<string, { status: AttendanceStatus; checkIn?: string; checkOut?: string; present: boolean; projectId: string }>>({})
+
+  // Persist selected project across refreshes
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const saved = localStorage.getItem('selectedProject')
+    if (saved) setSelectedProject(saved)
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (selectedProject) {
+      localStorage.setItem('selectedProject', selectedProject)
+    } else {
+      localStorage.removeItem('selectedProject')
+    }
+  }, [selectedProject])
 
   // Create a reusable function to fetch shift data
   const fetchShiftsRealtime = async () => {
+    // Guard: require selected project for project-scoped shift fetching
+    if (!selectedProject) return
     try {
+      setIsShiftLoading(true)
       const today = new Date().toISOString().split("T")[0]
-      const res = await fetch(`/api/employee-shifts?date=${today}`, { cache: "no-store" })
+      const res = await fetch(`/api/employee-shifts?date=${today}${selectedProject ? `&projectId=${encodeURIComponent(selectedProject)}` : ""}`, { cache: "no-store" })
       const body = await res.json().catch(() => [])
       if (!res.ok) {
         toast.error((body as any)?.message || "Failed to fetch shifts.")
+        setIsShiftLoading(false)
         return
       }
       const map: Record<string, { shifts: number; perShiftSalary: number; totalPay?: number }> = {}
@@ -103,14 +133,13 @@ export default function SupervisorEmployee() {
       }
 
       setShiftData(map)
-      // reflect latest shifts in employee cards
-      setEmployees((prev) =>
-        prev.map((emp) =>
-          (emp.workType || "").toLowerCase() === "shift"
-            ? { ...emp, shiftsWorked: map[emp._id]?.shifts ?? emp.shiftsWorked ?? 0 }
-            : emp,
-        ),
-      )
+      // Persist per-project shift data to sessionStorage to avoid zeroes on refresh
+      if (typeof window !== 'undefined' && selectedProject) {
+        try {
+          sessionStorage.setItem(`shiftData:${selectedProject}`, JSON.stringify(map))
+        } catch {}
+      }
+      // Do not mutate employees[].shiftsWorked here; keep shiftData scoped per project
 
       // Show notification if shifts were updated from external source
       if (externalUpdates) {
@@ -121,6 +150,8 @@ export default function SupervisorEmployee() {
       }
     } catch (err) {
       console.error("Error fetching shifts:", err)
+    } finally {
+      setIsShiftLoading(false)
     }
   }
 
@@ -161,7 +192,12 @@ export default function SupervisorEmployee() {
       setEmployees(mapped)
 
       // Fetch shift data immediately after loading employees
-      await fetchShiftsRealtime()
+      if (selectedProject) {
+        await fetchShiftsRealtime()
+      } else {
+        // Ensure no cross-project shift data is displayed without a selected project
+        setShiftData({})
+      }
     } catch (e: any) {
       setError(e?.message || "Failed to load employees")
     } finally {
@@ -214,6 +250,12 @@ export default function SupervisorEmployee() {
       return false
     }
 
+    // Require project selection for project-scoped attendance
+    if (!selectedProject) {
+      toast.error("Select a project before setting attendance")
+      return false
+    }
+
     try {
       const now = new Date()
       const timestamp = now.toISOString()
@@ -223,6 +265,7 @@ export default function SupervisorEmployee() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           employeeId,
+          projectId: selectedProject,
           date: dateStr,
           status,
           leaveReason,
@@ -234,22 +277,36 @@ export default function SupervisorEmployee() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // Update local state optimistically
-        setEmployees((prev) =>
-          prev.map((emp) =>
-            emp._id === employeeId
-              ? {
-                ...emp,
-                attendance: {
-                  ...emp.attendance,
-                  status,
-                  checkIn: status === "Present" || status === "On Duty" ? timestamp : emp.attendance?.checkIn,
-                  present: status === "Present" || status === "On Duty",
-                },
-              }
-              : emp,
-          ),
-        )
+        // Create a unique key for this employee-project combination
+        const attendanceKey = `${selectedProject}_${employeeId}`
+        
+        // Update project-scoped attendance cache optimistically
+        setAttendanceData((prev) => {
+          const next = { ...prev }
+          next[attendanceKey] = {
+            status,
+            checkIn: status === "Present" || status === "On Duty" ? timestamp : prev[attendanceKey]?.checkIn,
+            checkOut: prev[attendanceKey]?.checkOut,
+            present: status === "Present" || status === "On Duty",
+            projectId: selectedProject
+          }
+          return next
+        })
+        
+        // Persist per-project attendance to sessionStorage
+        if (typeof window !== 'undefined' && selectedProject) {
+          try {
+            const currentData = { ...attendanceData }
+            currentData[attendanceKey] = {
+              status,
+              checkIn: status === "Present" || status === "On Duty" ? timestamp : attendanceData[attendanceKey]?.checkIn,
+              checkOut: attendanceData[attendanceKey]?.checkOut,
+              present: status === "Present" || status === "On Duty",
+              projectId: selectedProject
+            }
+            sessionStorage.setItem(`attendanceData:${selectedProject}`, JSON.stringify(currentData))
+          } catch {}
+        }
 
         toast.success(data.message || `${employee.name}'s attendance updated to ${status}`)
 
@@ -269,9 +326,11 @@ export default function SupervisorEmployee() {
   }
 
   const fetchAttendanceRealtime = async () => {
+    // Guard: require selected project for project-scoped attendance fetching
+    if (!selectedProject) return
     try {
       const today = new Date().toISOString().split("T")[0]
-      const res = await fetch(`/api/attendance?date=${today}&monthlyEmployees=true`, {
+      const res = await fetch(`/api/attendance?date=${today}&monthlyEmployees=true${selectedProject ? `&projectId=${encodeURIComponent(selectedProject)}` : ""}` , {
         cache: "no-store",
         headers: { Accept: "application/json" },
       })
@@ -287,51 +346,64 @@ export default function SupervisorEmployee() {
       }
 
       const records: any[] = Array.isArray(raw) ? (raw as any[]) : ((raw as any)?.data || [])
-      const attMap = new Map<string, any>()
+      const map: Record<string, { status: AttendanceStatus; checkIn?: string; checkOut?: string; present: boolean; projectId: string }> = {}
       for (const rec of records) {
-        const eid =
-          typeof rec.employeeId === "string" ? rec.employeeId : (rec.employeeId as any)?._id || String(rec.employeeId)
+        const eid = typeof rec.employeeId === "string" ? rec.employeeId : (rec.employeeId as any)?._id || String(rec.employeeId)
         if (!eid) continue
-        attMap.set(String(eid), rec)
+        
+        // Get project ID from record or use selected project
+        const projectId = (rec as any).projectId || selectedProject
+        if (!projectId) continue
+        
+        // Create a unique key for this employee-project combination
+        const attendanceKey = `${projectId}_${eid}`
+        
+        const statusNorm = normalizeAttendanceStatus((rec as any).status, (rec as any).present)
+        map[attendanceKey] = {
+          status: statusNorm,
+          checkIn: (rec as any).checkIn,
+          checkOut: (rec as any).checkOut,
+          present: statusNorm === "Present" || statusNorm === "On Duty",
+          projectId: projectId
+        }
       }
-
-      setEmployees((prev) =>
-        prev.map((emp) => {
-          if (emp.workType !== "Monthly") return emp
-          const att = attMap.get(emp._id)
-          if (!att) {
-            return {
-              ...emp,
-              attendance: emp.attendance?.status ? emp.attendance : { present: false, status: null },
-            }
-          }
-          const statusNorm = normalizeAttendanceStatus((att as any).status, (att as any).present)
-          return {
-            ...emp,
-            attendance: {
-              ...emp.attendance,
-              status: statusNorm,
-              checkIn: (att as any).checkIn || emp.attendance?.checkIn,
-              checkOut: (att as any).checkOut || emp.attendance?.checkOut,
-              present: statusNorm === "Present" || statusNorm === "On Duty",
-            },
-          }
-        }),
-      )
+      setAttendanceData(map)
+      // Persist per-project attendance to sessionStorage
+      if (typeof window !== 'undefined' && selectedProject) {
+        try {
+          sessionStorage.setItem(`attendanceData:${selectedProject}`, JSON.stringify(map))
+        } catch {}
+      }
     } catch (err) {
       console.error("Error fetching live attendance:", err)
     }
   }
 
   useEffect(() => {
+    // Refetch attendance when project changes and keep polling with fresh scope
+    // Rehydrate cached attendance data for the selected project first
+    if (typeof window !== 'undefined' && selectedProject) {
+      const key = `attendanceData:${selectedProject}`
+      const cached = sessionStorage.getItem(key)
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached)
+          if (parsed && typeof parsed === 'object') {
+            setAttendanceData(parsed)
+          }
+        } catch {}
+      } else {
+        setAttendanceData({})
+      }
+    } else {
+      setAttendanceData({})
+    }
+
     fetchAttendanceRealtime()
 
-    // Set up interval for real-time updates (every 30 seconds)
     const interval = setInterval(fetchAttendanceRealtime, 30000)
-
     return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [selectedProject])
   // Fetch shift data whenever employees list changes
   useEffect(() => {
     const hasShiftEmployees = employees.some((e) => (e.workType || "").toLowerCase() === "shift")
@@ -344,12 +416,43 @@ export default function SupervisorEmployee() {
 
     return () => clearInterval(interval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employees])
+  }, [employees, selectedProject])
+
+  // Reset local shift cache when switching projects to avoid cross-project mixing
+  useEffect(() => {
+    if (!selectedProject) {
+      setShiftData({})
+      return
+    }
+    // Rehydrate cached shift data for the selected project immediately
+    if (typeof window !== 'undefined') {
+      const key = `shiftData:${selectedProject}`
+      const cached = sessionStorage.getItem(key)
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached)
+          if (parsed && typeof parsed === 'object') {
+            setShiftData(parsed)
+          }
+        } catch {}
+      } else {
+        setShiftData({})
+      }
+    }
+    // Then fetch fresh data from DB to keep it up-to-date
+    fetchShiftsRealtime()
+  }, [selectedProject])
   // Save/update shift assignment for an employee
   const saveShift = async (employeeId: string, shifts: number, perShiftSalary: number) => {
     try {
       const today = new Date().toISOString().split("T")[0]
       const userId = typeof window !== "undefined" ? localStorage.getItem("userId") : null
+
+      // Require project selection for project-scoped shift saving
+      if (!selectedProject) {
+        toast.error("Select a project before saving shifts")
+        return false
+      }
 
       const res = await fetch(`/api/employee-shifts`, {
         method: "PUT",
@@ -357,7 +460,7 @@ export default function SupervisorEmployee() {
           "Content-Type": "application/json",
           ...(userId ? { "Authorization": `Bearer ${userId}` } : {})
         },
-        body: JSON.stringify({ employeeId, date: today, shifts, perShiftSalary }),
+        body: JSON.stringify({ employeeId, projectId: selectedProject, date: today, shifts, perShiftSalary }),
       })
 
       const doc = await res.json().catch(() => null)
@@ -368,7 +471,7 @@ export default function SupervisorEmployee() {
       const s = typeof (doc as any)?.shifts === "number" ? (doc as any).shifts : shifts
       const pay = typeof (doc as any)?.perShiftSalary === "number" ? (doc as any).perShiftSalary : perShiftSalary
       setShiftData((prev) => ({ ...prev, [employeeId]: { shifts: s, perShiftSalary: pay, totalPay: (doc as any)?.totalPay } }))
-      setEmployees((prev) => prev.map((e) => (e._id === employeeId ? { ...e, shiftsWorked: s } : e)))
+      // Do not update employees[].shiftsWorked; display derives from shiftData per selected project
       toast.success("Shift updated successfully")
       return true
     } catch (err) {
@@ -378,15 +481,96 @@ export default function SupervisorEmployee() {
     }
   }
 
-  const filtered = useMemo(() => {
+  // Group employees by project - only include projects that have assigned employees
+  const projectsWithEmployees = useMemo(() => {
+    const projectMap = new Map<string, ProjectWithEmployees>()
+    
+    // Group employees by their projects - only create project entries when employees are assigned
+    employees.forEach(employee => {
+      const assignedProjects = Array.isArray((employee as any).assignedProjects)
+        ? (employee as any).assignedProjects
+        : []
+      
+      // Handle modern assignedProjects array
+      assignedProjects.forEach((assignment: any) => {
+        const projectId = assignment.projectId
+        if (!projectId) return
+        
+        // Create project entry if it doesn't exist yet
+        if (!projectMap.has(projectId)) {
+          const projectData = projects.find(p => p._id === projectId)
+          if (!projectData) return // Skip if project not found
+          
+          projectMap.set(projectId, {
+            ...projectData,
+            employees: [],
+            isActive: selectedProject === projectId
+          })
+        }
+        
+        // Add employee to project
+        const project = projectMap.get(projectId)!
+        if (!project.employees.some(e => e._id === employee._id)) {
+          project.employees.push(employee)
+        }
+      })
+      
+      // Handle legacy single projectId
+      if (employee.projectId) {
+        const projectId = employee.projectId
+        
+        // Create project entry if it doesn't exist yet
+        if (!projectMap.has(projectId)) {
+          const projectData = projects.find(p => p._id === projectId)
+          if (!projectData) return // Skip if project not found
+          
+          projectMap.set(projectId, {
+            ...projectData,
+            employees: [],
+            isActive: selectedProject === projectId
+          })
+        }
+        
+        // Add employee to project
+        const project = projectMap.get(projectId)!
+        if (!project.employees.some(e => e._id === employee._id)) {
+          project.employees.push(employee)
+        }
+      }
+    })
+    
+    return Array.from(projectMap.values())
+  }, [projects, employees, selectedProject])
+
+  // Filter employees based on selected project and search term
+  const filteredEmployees = useMemo(() => {
+    let filtered = employees
+    
+    // Filter by selected project if any
+    if (selectedProject) {
+      filtered = filtered.filter(emp => {
+        const assignedProjects = Array.isArray((emp as any).assignedProjects)
+          ? (emp as any).assignedProjects
+          : []
+        
+        return assignedProjects.some((assignment: any) => 
+          String(assignment.projectId) === selectedProject
+        ) || String(emp.projectId) === selectedProject
+      })
+    }
+    
+    // Apply search filter
     const term = search.trim().toLowerCase()
-    if (!term) return employees
-    return employees.filter((e) =>
-      [e.name, e.email, e.role, e.position, e.workType, e.status]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(term)),
-    )
-  }, [employees, search])
+    if (term) {
+      filtered = filtered.filter((e) =>
+        [e.name, e.email, e.role, e.position, e.workType, e.status]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(term))
+      )
+    }
+    
+    return filtered
+  }, [employees, selectedProject, search])
 
   const getStatusVariant = (status?: string) => {
     if (!status) return "secondary" as const
@@ -422,18 +606,6 @@ export default function SupervisorEmployee() {
           </div>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto">
-          {/* <Button
-            variant="outline"
-            size="sm"
-            className="flex items-center gap-2"
-            onClick={() => {
-              // Navigate to today's shifts view
-              window.location.href = "/dashboard?section=employee-shifts";
-            }}
-          >
-            <Calendar className="w-4 h-4" />
-            Shift Today
-          </Button> */}
           <div className="relative w-full sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
             <Input
@@ -446,7 +618,10 @@ export default function SupervisorEmployee() {
           <Button
             size="icon"
             variant="outline"
-            onClick={() => fetchEmployees()}
+            onClick={() => {
+              setSelectedProject(null)
+              fetchEmployees()
+            }}
             title="Refresh"
             disabled={loading}
             className="shrink-0"
@@ -464,35 +639,49 @@ export default function SupervisorEmployee() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Team</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{employees.length}</div>
-            <p className="text-xs text-muted-foreground">Employees reporting to you</p>
-          </CardContent>
-        </Card>
+      {/* Project Cards */}
+      {!selectedProject && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {projectsWithEmployees.map((project) => (
+          <Card 
+            key={project._id}
+            className={`cursor-pointer transition-all duration-200 ${
+              project.isActive 
+                ? 'ring-2 ring-primary shadow-lg' 
+                : 'hover:shadow-md'
+            }`}
+            onClick={() => setSelectedProject(project.isActive ? null : project._id)}
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-lg font-medium truncate">{project.title}</CardTitle>
+              <Badge variant="outline" className="ml-2">
+                {project.employees.length} {project.employees.length === 1 ? 'Employee' : 'Employees'}
+              </Badge>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                Click to {project.isActive ? 'hide' : 'view'} assigned employees
+              </p>
+            </CardContent>
+          </Card>
+        ))}
+        </div>
+      )}
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active</CardTitle>
-            <Briefcase className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {employees.filter((e) => (e.status?.toLowerCase() || "").includes("active")).length}
+      {/* Employee Cards */}
+      {selectedProject && (
+        <div className="space-y-4 transition-all duration-300 ease-out">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-xl font-semibold">
+                {projects.find((p) => p._id === selectedProject)?.title || "Selected Project"}
+              </h3>
+              <p className="text-sm text-muted-foreground">Assigned employees</p>
             </div>
-            <p className="text-xs text-muted-foreground">Currently working</p>
-          </CardContent>
-        </Card>
-        {/* other stat cards are intentionally left commented to keep UI unchanged */}
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filtered.map((emp) => (
+            <Button variant="outline" onClick={() => setSelectedProject(null)}>Back to projects</Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {filteredEmployees.map((emp) => (
           <Card key={emp._id} className="hover:shadow-lg transition-all duration-200 border-0 shadow-sm">
             <CardContent className="p-6">
              
@@ -575,8 +764,10 @@ export default function SupervisorEmployee() {
                         <Briefcase className="w-4 h-4 text-muted-foreground shrink-0" />
                         <span className="text-muted-foreground">
                           {emp.workType}
-                          {emp.workType?.toLowerCase() === "shift" && typeof emp.shiftsWorked === "number" && (
-                            <span className="ml-2 text-xs bg-secondary px-2 py-1 rounded">{emp.shiftsWorked} shifts</span>
+                          {emp.workType?.toLowerCase() === "shift" && (
+                            <span className="ml-2 text-xs bg-secondary px-2 py-1 rounded">
+                              {(typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0)} shifts
+                            </span>
                           )}
                         </span>
                       </div>
@@ -730,18 +921,18 @@ export default function SupervisorEmployee() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium">{"Today's Status:"}</span>
-                          {emp.attendance?.status ? (
+                          {(selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.status : emp.attendance?.status) ? (
                             <Badge
                               variant={
-                                emp.attendance.status === "Present"
+                                (selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.status : emp.attendance?.status) === "Present"
                                   ? "default"
-                                  : emp.attendance.status === "On Duty"
+                                  : (selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.status : emp.attendance?.status) === "On Duty"
                                     ? "secondary"
                                     : "destructive"
                               }
                               className="text-xs"
                             >
-                              {normalizeAttendanceStatus(emp.attendance.status)}
+                              {normalizeAttendanceStatus(selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.status : emp.attendance?.status)}
                             </Badge>
                           ) : (
                             <Badge variant="outline" className="text-xs">
@@ -751,15 +942,15 @@ export default function SupervisorEmployee() {
                         </div>
 
                         <Select
-                          value={emp.attendance?.status || ""}
+                          value={(selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.status : emp.attendance?.status) || ""}
                           onValueChange={(value) => handleAttendanceChange(emp._id, value as AttendanceStatus)}
                         >
                           <SelectTrigger
-                            className={`w-32 h-8 text-xs ${emp.attendance?.status === "Present"
+                            className={`w-32 h-8 text-xs ${(selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.status : emp.attendance?.status) === "Present"
                                 ? "bg-green-100 hover:bg-green-100/80"
-                                : emp.attendance?.status === "Absent"
+                                : (selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.status : emp.attendance?.status) === "Absent"
                                   ? "bg-red-100 hover:bg-red-100/80"
-                                  : emp.attendance?.status === "On Duty"
+                                  : (selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.status : emp.attendance?.status) === "On Duty"
                                     ? "bg-yellow-100 hover:bg-yellow-100/80"
                                     : "bg-white hover:bg-gray-50"
                               }`}
@@ -779,10 +970,10 @@ export default function SupervisorEmployee() {
                         </Select>
                       </div>
 
-                      {emp.attendance?.checkIn && (
+                      {(selectedProject ? attendanceData[`${selectedProject}_${emp._id}`]?.checkIn : emp.attendance?.checkIn) && (
                         <div className="mt-2 text-xs text-muted-foreground">
                           {"Check-in: "}
-                          {new Date(emp.attendance.checkIn).toLocaleTimeString()}
+                          {new Date(selectedProject ? (attendanceData[`${selectedProject}_${emp._id}`]?.checkIn as string) : (emp.attendance!.checkIn as string)).toLocaleTimeString()}
                         </div>
                       )}
                     </div>
@@ -792,9 +983,11 @@ export default function SupervisorEmployee() {
             </CardContent>
           </Card>
         ))}
-      </div>
+          </div>
+        </div>
+      )}
 
-      {filtered.length === 0 && !loading && !error && (
+      {selectedProject && filteredEmployees.length === 0 && !loading && !error && (
         <div className="text-center py-16">
           <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-6">
             <Users className="w-12 h-12 text-muted-foreground" />
