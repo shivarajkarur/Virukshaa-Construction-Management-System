@@ -737,10 +737,13 @@ export default function SupervisorsPage() {
   }
 
   // Fetchers
-  const fetchProjects = useCallback(async () => {
+  const fetchProjects = useCallback(async (supervisorId?: string) => {
     setIsLoadingProjects(true)
     try {
-      const res = await fetch("/api/projects")
+      const url = supervisorId 
+        ? `/api/projects?supervisorId=${encodeURIComponent(supervisorId)}`
+        : "/api/projects"
+      const res = await fetch(url)
       const data: IProject[] = await res.json()
       setAvailableProjects(Array.isArray(data) ? data : [])
     } catch {
@@ -1768,8 +1771,8 @@ export default function SupervisorsPage() {
     if (!selectedSupervisor) return
     try {
       setSelectedAssignProjectId("")
-      // Ensure projects are loaded before opening the dialog
-      await fetchProjects()
+      // Ensure projects are loaded before opening the dialog - only show projects assigned to this supervisor
+      await fetchProjects(selectedSupervisor._id)
       // Prefetch available employees
       await fetchAvailableEmployees(selectedSupervisor._id)
       setIsEmployeeAssignOpen(true)
@@ -3170,7 +3173,7 @@ export default function SupervisorsPage() {
           <DialogHeader>
             <DialogTitle>Assign Employee</DialogTitle>
             <DialogDescription>
-              Select a project and an employee to assign to {selectedSupervisor?.name}.
+              Select a project assigned to {selectedSupervisor?.name} and an employee to assign to it.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 mb-4">

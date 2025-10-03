@@ -135,11 +135,17 @@ export async function POST(
       supervisor.employees.push(employeeId);
     }
     
-    // Add project assignment with role
+    // Add project assignment with role - REPLACE any existing assignment for this employee
     if (!supervisor.projectAssignments) {
       supervisor.projectAssignments = [];
     }
     
+    // Remove any existing project assignments for this employee under this supervisor
+    supervisor.projectAssignments = supervisor.projectAssignments.filter(
+      (assignment: any) => String(assignment.employeeId) !== String(employeeId)
+    );
+    
+    // Add the new project assignment
     supervisor.projectAssignments.push({
       projectId,
       employeeId,
@@ -150,19 +156,19 @@ export async function POST(
     
     await supervisor.save();
     
-    // Update employee's assigned projects (project-wise tracking)
-    const hasEmployeeAssignment = (employee as any).assignedProjects?.some(
-      (ap: any) => String(ap.projectId) === String(projectId) && String(ap.supervisorId) === String(supervisor._id)
-    );
-    if (!hasEmployeeAssignment) {
-      (employee as any).assignedProjects = (employee as any).assignedProjects || [];
-      (employee as any).assignedProjects.push({
-        projectId,
-        supervisorId: supervisor._id,
-        role: role || 'Team Member',
-        assignedAt: new Date()
-      });
-    }
+    // Update employee's assigned projects - REPLACE any existing assignment for this supervisor
+    // Remove any existing project assignments for this supervisor
+    (employee as any).assignedProjects = (employee as any).assignedProjects?.filter(
+      (ap: any) => String(ap.supervisorId) !== String(supervisor._id)
+    ) || [];
+    
+    // Add the new project assignment
+    (employee as any).assignedProjects.push({
+      projectId,
+      supervisorId: supervisor._id,
+      role: role || 'Team Member',
+      assignedAt: new Date()
+    });
     await employee.save();
     
     return NextResponse.json(
