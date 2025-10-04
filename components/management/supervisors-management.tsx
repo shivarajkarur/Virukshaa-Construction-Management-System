@@ -1916,6 +1916,41 @@ export default function SupervisorsPage() {
     [selectedSupervisor, fetchAvailableEmployees, selectedAssignProjectId],
   )
 
+  // Clear all project assignments for employees under the selected supervisor
+  const resetSupervisorProjects = useCallback(async () => {
+    if (!selectedSupervisor?._id) return
+    const loadingToast = toast.loading("Clearing project assignments...")
+    try {
+      const assignments = selectedSupervisor.projectAssignments || []
+      // Remove each project-specific assignment to preserve employee records
+      await Promise.all(
+        assignments.map(async (pa: any) => {
+          const res = await fetch(`/api/supervisors/${selectedSupervisor._id}/employees`, {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ employeeId: pa.employeeId, projectId: pa.projectId }),
+          })
+          if (!res.ok) throw new Error(await res.text())
+        })
+      )
+
+      // Update local state to reflect cleared assignments while preserving employees in the list
+      const updatedSupervisor = { ...selectedSupervisor, projectAssignments: [] }
+      setSelectedSupervisor(updatedSupervisor)
+      setSupervisors((prev) => prev.map((s) => (s._id === updatedSupervisor._id ? updatedSupervisor : s)))
+
+      // Refresh assigned employees list
+      await fetchAssignedEmployees(updatedSupervisor._id)
+
+      toast.dismiss(loadingToast)
+      toast.success("Project links cleared for all team members")
+    } catch (e: any) {
+      console.error(e)
+      toast.dismiss(loadingToast)
+      toast.error(e?.message || "Failed to clear project links")
+    }
+  }, [selectedSupervisor, setSelectedSupervisor, setSupervisors, fetchAssignedEmployees])
+
   // UI: grid and list views
   const renderGridView = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -2827,6 +2862,9 @@ export default function SupervisorsPage() {
                     <Button size="sm" onClick={openEmployeeAssign}>
                       <Plus className="w-4 h-4 mr-2" />
                       Assign Employee
+                    </Button>
+                    <Button size="sm" variant="destructive" onClick={resetSupervisorProjects}>
+                      Reset Projects
                     </Button>
                   </div>
                   <div className="space-y-3">
