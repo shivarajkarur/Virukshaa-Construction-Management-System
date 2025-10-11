@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {Alert, AlertTitle, AlertDescription} from "@/components/ui/alert"
 import { Textarea } from "@/components/ui/textarea"
 // import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -1973,7 +1974,7 @@ export default function EmployeesManagement() {
                           </AvatarFallback>
                         </Avatar> */}
                         <div>
-                          <div className="text-lg font-semibold font-medium">{employee.name}</div>
+                          <div className="text-lg font-semibold">{employee.name}</div>
                           <div className="text-md text-muted-foreground">
                             {(employee.role || "").trim() || "Employee"} • {employee.workType}
                           </div>
