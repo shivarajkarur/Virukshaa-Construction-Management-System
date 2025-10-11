@@ -273,9 +273,8 @@ export default function DashboardLayout({
   // bg-[#051118] 
   const Sidebar = ({ mobile = false }) => (
     <div className={`flex flex-col h-full ${mobile ? "w-full" : "w-64"} bg-[#fff0] shadow-md`}>
-      <div className="flex items-center gap-0 p-6">
-        <img src="/virukshaa3.png" alt="" className="min-w-[20px] h-8" />
-        <span className="font-bold text-xl text-[#37db44]">Virukshaa</span>
+      <div className="flex items-center w-full  justify-start gap-0 px-6 py-2">
+        <img src="/virukshaaa1.png" alt="" className="w-[200px] h-auto" />
       </div>
 
       <nav className="flex-1 p-4 space-y-2">

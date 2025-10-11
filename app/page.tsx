@@ -130,7 +130,7 @@ export default function LoginPage() {
             <img src="/virukshaa4.png" alt="" className="h-20 " />
 
           </div>
-          <CardTitle className="text-2xl font-bold">Virukshaa Construction Product</CardTitle>
+          {/* <CardTitle className="text-2xl font-bold">Virukshaa Construction Product</CardTitle> */}
           <CardDescription>Construction Management System</CardDescription>
         </CardHeader>
         <CardContent>
