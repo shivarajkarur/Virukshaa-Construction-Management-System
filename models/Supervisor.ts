@@ -54,7 +54,7 @@ const supervisorSchema = new Schema<ISupervisor>({
 supervisorSchema.index({
   name: 'text',
   email: 'text',
-  username: 'text'
+  username: 'text',
 });
 
 // Method to compare password

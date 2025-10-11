@@ -46,6 +46,14 @@ export const authOptions: NextAuthOptions = {
           throw new Error("No user found with these credentials");
         }
 
+        // Block inactive supervisors from logging in (case-insensitive check)
+        if (role === 'supervisor' || role === 'client') {
+          const status = String((user as any).status || '').toLowerCase();
+          if (status === 'inactive') {
+            throw new Error('Account is inactive. Please contact administrator.');
+          }
+        }
+
         const stored = (user as any).password as string | undefined;
         const isValid = stored ? stored === password : false;
 

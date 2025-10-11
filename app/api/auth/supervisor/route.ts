@@ -25,6 +25,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ message: "Invalid credentials" }, { status: 401 })
     }
 
+    // Check if supervisor is inactive (case-insensitive)
+    if (String(user.status || '').toLowerCase() === "inactive") {
+      return NextResponse.json({ message: "Account is inactive. Please contact administrator." }, { status: 403 })
+    }
+
     // Return basic profile info (do not expose password)
     return NextResponse.json({
       _id: user._id.toString(),
