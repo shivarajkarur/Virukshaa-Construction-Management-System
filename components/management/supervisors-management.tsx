@@ -71,6 +71,7 @@ interface DocumentUrl {
   url: string;
   name?: string;
   type?: string;
+  size?: number;
 }
 
 interface Task {
@@ -2857,15 +2858,17 @@ export default function SupervisorsPage() {
                 </TabsContent>
 
                 <TabsContent value="team" className="flex-1 overflow-y-auto pr-2 space-y-4">
-                  <div className="flex justify-between items-center">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4">
                     <h3 className="text-lg font-semibold">Team Members</h3>
-                    <Button size="sm" onClick={openEmployeeAssign}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Assign Employee
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={resetSupervisorProjects}>
-                      Reset Projects
-                    </Button>
+                    <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                      <Button size="sm" onClick={openEmployeeAssign} className="w-full sm:w-auto">
+                        <Plus className="w-4 h-4 mr-2" />
+                        Assign Employee
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={resetSupervisorProjects} className="w-full sm:w-auto">
+                        Reset Projects
+                      </Button>
+                    </div>
                   </div>
                   <div className="space-y-3">
                     {supervisorEmployees.length > 0 ? (
