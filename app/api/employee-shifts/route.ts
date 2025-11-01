@@ -10,15 +10,37 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const dateStr = searchParams.get("date");
+    const startStr = searchParams.get("start");
+    const endStr = searchParams.get("end");
     const employeeId = searchParams.get("employeeId");
     const projectId = searchParams.get("projectId");
+    
+    // Support either single-day fetch (date) or range fetch (start/end)
+    let filter: any = {};
+    if (dateStr) {
+      const target = new Date(dateStr);
+      target.setUTCHours(0, 0, 0, 0);
+      const next = new Date(target);
+      next.setUTCDate(target.getUTCDate() + 1);
+      filter.date = { $gte: target, $lt: next };
+    } else if (startStr && endStr) {
+      const start = new Date(startStr);
+      const end = new Date(endStr);
+      start.setUTCHours(0, 0, 0, 0);
+      end.setUTCHours(0, 0, 0, 0);
+      // include end day: set end to next day exclusive upper bound
+      const endExclusive = new Date(end);
+      endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+      filter.date = { $gte: start, $lt: endExclusive };
+    } else {
+      // default to today
+      const target = new Date();
+      target.setUTCHours(0, 0, 0, 0);
+      const next = new Date(target);
+      next.setUTCDate(target.getUTCDate() + 1);
+      filter.date = { $gte: target, $lt: next };
+    }
 
-    const target = dateStr ? new Date(dateStr) : new Date();
-    target.setUTCHours(0, 0, 0, 0);
-    const next = new Date(target);
-    next.setUTCDate(target.getUTCDate() + 1);
-
-    const filter: any = { date: { $gte: target, $lt: next } };
     if (employeeId) filter.employeeId = employeeId;
     if (projectId) filter.projectId = projectId;
 

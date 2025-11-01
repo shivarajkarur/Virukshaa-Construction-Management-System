@@ -1070,8 +1070,9 @@ const PayrollManagement = () => {
       doc.text("Individual Payroll Report", 20, doc.internal.pageSize.height - 10)
       doc.text(`Generated: ${currentDate}`, pageWidth - 60, doc.internal.pageSize.height - 10)
 
-      // Save with user-specific filename
-      const fileName = `payroll-${user.role}-${user.name?.replace(/\s+/g, "-") || "user"}-${new Date().toISOString().split("T")[0]}.pdf`
+      // Save with ID-based filename (prefer employee/user ID over name)
+      const safeId = (user._id || "").toString().replace(/\s+/g, "-") || "id"
+      const fileName = `payroll-${user.role}-${safeId}-${new Date().toISOString().split("T")[0]}.pdf`
       doc.save(fileName)
 
       toast({ description: `Individual report for ${user.name} exported successfully!` })

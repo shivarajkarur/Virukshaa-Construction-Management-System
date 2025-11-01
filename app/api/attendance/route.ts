@@ -21,6 +21,12 @@ export async function POST(req: NextRequest) {
 
     const { employeeId, supervisorId, projectId, date, status, leaveReason = null, isPaid = true } = await req.json();
 
+    // Explicitly validate status to fail fast before hitting Mongoose validators
+    const allowedStatuses = new Set(["Present", "Absent", "On Duty"]);
+    if (!status || !allowedStatuses.has(status)) {
+      return NextResponse.json({ success: false, message: "Invalid status value" }, { status: 400 });
+    }
+
     if ((!employeeId && !supervisorId) || !date || !status) {
       return NextResponse.json({ success: false, message: "Missing required fields" }, { status: 400 });
     }
@@ -139,14 +145,23 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: false, message: "Unable to update attendance due to duplicate constraint", error: e2?.message || String(e2) }, { status: 409 });
         }
       } else {
+        // Surface Mongoose validation errors with 400 for better client feedback
+        if (e?.name === 'ValidationError') {
+          return NextResponse.json({ success: false, message: 'Validation error', error: e?.message || String(e) }, { status: 400 });
+        }
+        // For other errors, fall through to generic handler below
         throw e;
       }
     }
 
     return NextResponse.json({ success: true, message: "Attendance marked successfully", data: attendance }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error marking attendance:", error);
-    return NextResponse.json({ success: false, message: "Internal Server Error" }, { status: 500 });
+    // Handle common casting errors (e.g., invalid ObjectId) as 400
+    if (error?.name === 'CastError') {
+      return NextResponse.json({ success: false, message: 'Invalid identifier', error: error?.message || String(error) }, { status: 400 });
+    }
+    return NextResponse.json({ success: false, message: "Internal Server Error", error: error?.message || String(error) }, { status: 500 });
   }
 }
 

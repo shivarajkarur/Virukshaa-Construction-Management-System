@@ -1,6 +1,6 @@
 "use client"
 import type React from "react"
-import { useState, useEffect, useMemo } from "react"
+ import { useState, useEffect, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -21,6 +21,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
+  DialogClose,
 } from "@/components/ui/dialog"
 import { Calendar as CalendarComponent } from "@/components/ui/calendar"
 import { cn } from "@/lib/utils"
@@ -66,9 +67,14 @@ import {
   AlertCircle
 } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Tooltip, TooltipProvider, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { Calculator, HelpCircle } from "lucide-react"
 // Modified to allow admin access
+import { jsPDF } from "jspdf"
+import autoTable from "jspdf-autotable"
+import { Download } from "lucide-react"
+import { useSession } from "next-auth/react"
 
 import SupervisorEmployee from "./supervisor-employee"
 
@@ -96,6 +102,593 @@ type SupervisorEmployeeItem = {
     checkOut?: string
     status?: AttendanceStatus
   }
+}
+
+// Combined Shift View for Shift Employees (mirrors CombinedAttendanceView patterns)
+function CombinedShiftView({
+  employeeId,
+  projectId,
+  initialMonth,
+  onRealtimeUpdate,
+  employee,
+  projectTitle,
+}: {
+  employeeId: string
+  projectId?: string | null
+  initialMonth?: string
+  onRealtimeUpdate?: (payload: { employeeId: string; projectId?: string | null; date: string; shifts: number; perShiftSalary?: number }) => void
+  employee: Employee
+  projectTitle?: string
+}) {
+  const { toast } = useToast()
+  const { data: session } = useSession()
+  const canExport = (session?.user?.role === "superadmin" || session?.user?.role === "supervisor")
+  const [selectedMonth, setSelectedMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7))
+  const [rangeStart, setRangeStart] = useState<Date | null>(null)
+  const [rangeEnd, setRangeEnd] = useState<Date | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const [shiftRows, setShiftRows] = useState<ShiftAttendanceRecord[]>([])
+  const [detailsMap, setDetailsMap] = useState<Record<string, { startTime?: string; endTime?: string; breakMinutes?: number; pattern?: "morning" | "evening" | "night" | "custom"; overtimeMinutes?: number; status?: "recorded" | "incomplete" }>>({})
+
+  const [patternFilter, setPatternFilter] = useState<"any" | "morning" | "evening" | "night">("any")
+  const [statusFilter, setStatusFilter] = useState<"any" | "recorded" | "incomplete">("any")
+
+  const [sortKey, setSortKey] = useState<"date" | "shifts" | "overtime" | "pay" | "pattern">("date")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+
+  // Edit dialog state
+  const [editOpen, setEditOpen] = useState(false)
+  const [editDateKey, setEditDateKey] = useState<string | null>(null)
+  const [editShifts, setEditShifts] = useState<number>(0)
+
+  // Helpers
+  const toMinutes = (time: string) => {
+    const m = /^([0-1]?\d|2[0-3]):([0-5]\d)$/.exec(time || "")
+    if (!m) return null
+    const hh = Number(m[1]); const mm = Number(m[2])
+    return hh * 60 + mm
+  }
+  const classifyPattern = (start?: string): "morning" | "evening" | "night" => {
+    const mins = start ? toMinutes(start) : null
+    if (mins == null) return "morning"
+    if (mins >= 300 && mins < 780) return "morning"
+    if (mins >= 780 && mins < 1080) return "evening"
+    return "night"
+  }
+  const validateShiftDetails = (start: string, end: string, breakMin: number) => {
+    const s = toMinutes(start); const e = toMinutes(end)
+    if (s == null || e == null) return "Invalid time format (HH:MM)"
+    if (e <= s) return "End time must be after start time"
+    if (breakMin < 0) return "Break minutes cannot be negative"
+    const duration = e - s
+    if (breakMin > duration) return "Break cannot exceed total duration"
+    return null
+  }
+  const computeOvertime = (start: string, end: string, breakMin: number, shifts: number) => {
+    const s = toMinutes(start)!; const e = toMinutes(end)!
+    const worked = e - s - (breakMin || 0)
+    const scheduledPerShift = 8 * 60
+    const scheduled = Math.max(0, shifts) * scheduledPerShift
+    return Math.max(0, worked - scheduled)
+  }
+
+  // Month options
+  const months = useMemo(() => {
+    const now = new Date()
+    return Array.from({ length: 12 }, (_, i) => {
+      const dt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1))
+      return { value: dt.toISOString().slice(0, 7), label: dt.toLocaleString("default", { month: "long", year: "numeric" }) }
+    })
+  }, [])
+
+  // Fetch all shift records (scoped to employee + project), then filter by month/range
+  useEffect(() => {
+    const fetchAll = async () => {
+      if (!employeeId || !projectId) return
+      try {
+        setLoading(true)
+        const res = await fetch(`/api/employee-shifts?employeeId=${employeeId}&projectId=${encodeURIComponent(projectId)}`)
+        if (!res.ok) throw new Error("Failed to fetch shift records")
+        const json = await res.json()
+        const arr: ShiftAttendanceRecord[] = Array.isArray(json) ? json : Array.isArray((json as any)?.data) ? (json as any).data : []
+        setShiftRows(arr)
+      } catch (e) {
+        console.error(e)
+        toast({ title: "Load failed", description: (e as Error).message || "Could not fetch shift records", variant: "destructive" })
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchAll()
+  }, [employeeId, projectId])
+
+  // Derive label and period
+  const [year, monthNum] = selectedMonth.split("-").map(Number)
+  const monthStart = new Date(Date.UTC(year, monthNum - 1, 1))
+  const monthEnd = new Date(Date.UTC(year, monthNum, 0))
+  const selectedMonthLabel = useMemo(() => months.find((m) => m.value === selectedMonth)?.label || selectedMonth, [months, selectedMonth])
+
+  // Load persisted details (session-scoped per project + employee)
+  useEffect(() => {
+    const key = `shift-details:${projectId || "none"}:${employeeId}`
+    try {
+      const raw = sessionStorage.getItem(key)
+      if (raw) setDetailsMap(JSON.parse(raw))
+    } catch {}
+  }, [employeeId, projectId])
+  useEffect(() => {
+    const key = `shift-details:${projectId || "none"}:${employeeId}`
+    try {
+      sessionStorage.setItem(key, JSON.stringify(detailsMap))
+    } catch {}
+  }, [detailsMap, employeeId, projectId])
+
+  // Filtering and sorting
+  const filtered = useMemo(() => {
+    const start = rangeStart || monthStart
+    const end = rangeEnd || monthEnd
+    const out = (shiftRows || []).filter((r) => {
+      const d = new Date(r.date)
+      const key = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0]
+      const dateOnly = new Date(`${key}T00:00:00.000Z`)
+      if (dateOnly < start || dateOnly > end) return false
+      const det = detailsMap[key]
+      if (patternFilter !== "any") {
+        const pat = det?.pattern || classifyPattern(det?.startTime)
+        if (pat !== patternFilter) return false
+      }
+      if (statusFilter !== "any") {
+        const status = det?.status || ((r.shifts || 0) > 0 ? "recorded" : "incomplete")
+        if (status !== statusFilter) return false
+      }
+      return true
+    })
+
+    const compare = (a: ShiftAttendanceRecord, b: ShiftAttendanceRecord) => {
+      const keyA = new Date(a.date).toISOString().split("T")[0]
+      const keyB = new Date(b.date).toISOString().split("T")[0]
+      const detA = detailsMap[keyA] || {}
+      const detB = detailsMap[keyB] || {}
+      const overtimeA = detA.startTime && detA.endTime ? computeOvertime(detA.startTime, detA.endTime, detA.breakMinutes ?? 0, a.shifts || 0) : 0
+      const overtimeB = detB.startTime && detB.endTime ? computeOvertime(detB.startTime, detB.endTime, detB.breakMinutes ?? 0, b.shifts || 0) : 0
+      const payA = (a.totalPay ?? ((a.shifts || 0) * (a.perShiftSalary || 0)))
+      const payB = (b.totalPay ?? ((b.shifts || 0) * (b.perShiftSalary || 0)))
+
+      let diff = 0
+      if (sortKey === "date") {
+        diff = keyA.localeCompare(keyB)
+      } else if (sortKey === "shifts") {
+        diff = (a.shifts || 0) - (b.shifts || 0)
+      } else if (sortKey === "overtime") {
+        diff = overtimeA - overtimeB
+      } else if (sortKey === "pay") {
+        diff = payA - payB
+      } else if (sortKey === "pattern") {
+        const patA = detA.pattern || classifyPattern(detA.startTime)
+        const patB = detB.pattern || classifyPattern(detB.startTime)
+        diff = patA.localeCompare(patB)
+      }
+      return sortDir === "asc" ? diff : -diff
+    }
+
+    return out.sort(compare)
+  }, [shiftRows, detailsMap, rangeStart, rangeEnd, monthStart, monthEnd, patternFilter, statusFilter, sortKey, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const currentRows = useMemo(() => filtered.slice((page - 1) * pageSize, page * pageSize), [filtered, page, pageSize])
+
+  // Shift metrics and calendar data mirroring attendance logic
+  const monthFiltered = useMemo(() => {
+    const out = (shiftRows || []).filter((r) => {
+      const d = new Date(r.date)
+      const key = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0]
+      const dateOnly = new Date(`${key}T00:00:00.000Z`)
+      return dateOnly >= monthStart && dateOnly <= monthEnd
+    })
+    return out
+  }, [shiftRows, monthStart, monthEnd])
+
+  const totalShifts = useMemo(() => monthFiltered.reduce((sum, r) => sum + (r.shifts || 0), 0), [monthFiltered])
+  const totalPay = useMemo(
+    () => monthFiltered.reduce((sum, r) => sum + ((r.totalPay ?? ((r.shifts || 0) * (r.perShiftSalary || 0))) || 0), 0),
+    [monthFiltered],
+  )
+  const perShiftRate = useMemo(() => {
+    const rates = monthFiltered.map((r) => r.perShiftSalary || 0).filter((n) => typeof n === "number" && n > 0)
+    return rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : 0
+  }, [monthFiltered])
+  const recordedDays = useMemo(() => {
+    const keys = new Set<string>()
+    monthFiltered.forEach((r) => {
+      const k = new Date(r.date).toISOString().split("T")[0]
+      if ((r.shifts || 0) > 0) keys.add(k)
+    })
+    return keys.size
+  }, [monthFiltered])
+
+  const firstDay = new Date(Date.UTC(year, monthNum - 1, 1))
+  const lastDay = new Date(Date.UTC(year, monthNum, 0))
+  const daysInMonth = lastDay.getUTCDate()
+  const startDayIdx = firstDay.getUTCDay()
+  const today = new Date()
+
+  const totalWorkingDays = useMemo(() => {
+    let working = 0
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dt = new Date(Date.UTC(year, monthNum - 1, day))
+      if (dt > today) continue
+      if (dt.getUTCDay() === 0) continue
+      working++
+    }
+    return working
+  }, [year, monthNum, daysInMonth])
+
+  const attendanceRate = useMemo(() => (totalWorkingDays > 0 ? Math.round((recordedDays / totalWorkingDays) * 100) : 0), [recordedDays, totalWorkingDays])
+
+  const calendarData = useMemo(() => {
+    const map: Record<string, ShiftAttendanceRecord> = {}
+    monthFiltered.forEach((r) => {
+      const k = new Date(r.date).toISOString().split("T")[0]
+      map[k] = r
+    })
+    const cells: Array<{
+      isCurrentMonth: boolean
+      date?: number
+      key?: string
+      isSunday?: boolean
+      isFuture?: boolean
+      status?: "Present" | "Absent"
+      shifts?: number
+    }> = []
+    for (let i = 0; i < startDayIdx; i++) cells.push({ isCurrentMonth: false })
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt = new Date(Date.UTC(year, monthNum - 1, d))
+      const k = dt.toISOString().split("T")[0]
+      const rec = map[k]
+      const isSunday = dt.getUTCDay() === 0
+      const isFuture = dt > today
+      const status = rec && (rec.shifts || 0) > 0 ? "Present" : "Absent"
+      cells.push({ isCurrentMonth: true, date: d, key: k, isSunday, isFuture, status, shifts: rec?.shifts || 0 })
+    }
+    while (cells.length % 7 !== 0) cells.push({ isCurrentMonth: false })
+    return cells
+  }, [monthFiltered, year, monthNum, daysInMonth, startDayIdx, today])
+
+  const [exportingShift, setExportingShift] = useState(false)
+  const escapeCell = (s: string) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] as string))
+  const toExcelHTML = (headers: string[], rows: (string | number | null)[][]) => {
+    const thead = '<tr>' + headers.map((h) => `<th>${escapeCell(h)}</th>`).join('') + '</tr>'
+    const tbody = rows
+      .map((r) => '<tr>' + r.map((c) => `<td>${escapeCell(String(c ?? ''))}</td>`).join('') + '</tr>')
+      .join('')
+    return `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`
+  }
+  const exportShiftMonthly = async (format: 'pdf' | 'xls') => {
+    if (!projectId) {
+      toast({ title: "Missing Project", description: "Please select or set a project before exporting.", variant: "destructive" })
+      return
+    }
+    if (!canExport) {
+      toast({ title: "No Export Permission", description: "Only admin/supervisor can download shift report.", variant: "destructive" })
+      return
+    }
+    try {
+      setExportingShift(true)
+      toast({ title: "Exporting Shift Report", description: `Generating ${selectedMonth} shift report...` })
+      const headers = ["Date", "Shifts", "Per Shift Salary", "Total Salary"]
+      const rows = monthFiltered.map((r) => {
+        const d = new Date(r.date)
+        const key = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0]
+        const det = detailsMap[key] || {}
+        const overtime = det.startTime && det.endTime ? computeOvertime(det.startTime, det.endTime, det.breakMinutes ?? 0, r.shifts || 0) : 0
+        const status = det.status || ((r.shifts || 0) > 0 ? "recorded" : "incomplete")
+        const pat = det.pattern || classifyPattern(det.startTime)
+        return [
+          key,
+          r.shifts ?? 0,
+          r.perShiftSalary ?? 0,
+          r.totalPay ?? ((r.shifts || 0) * (r.perShiftSalary || 0)),
+          det.startTime ?? "",
+          det.endTime ?? "",
+          det.breakMinutes ?? 0,
+          pat,
+          overtime,
+          status,
+        ]
+      })
+      // Use employee name (fallback to ID) in exported filenames
+      const safeName = ((employee?.name || employeeId || 'employee').toString()).trim().replace(/\s+/g, '-')
+      if (format === 'pdf') {
+        const doc = new jsPDF()
+        doc.setFontSize(14)
+        doc.text(`Shift Report - ${selectedMonth}`, 14, 18)
+        doc.setFontSize(10)
+        doc.text(`Employee: ${employee?.name || employeeId}`, 14, 26)
+        if (employee?.phone) doc.text(`Phone: ${employee.phone}`, 14, 30)
+        if (employee?.role) doc.text(`Role: ${employee.role}`, 14, 34)
+        doc.text(`Work Type: ${employee?.workType || 'Daily'}`, 90, 26)
+        if (typeof employee?.salary === 'number') doc.text(`Salary: ${String(employee.salary)}`, 90, 30)
+        if (projectTitle) doc.text(`Project: ${projectTitle}`, 90, 34)
+
+        const startY = 40
+        autoTable(doc, {
+          head: [headers],
+          body: rows,
+          startY,
+          styles: { fontSize: 8 },
+          headStyles: { fillColor: [33, 150, 243], textColor: 255 },
+        })
+        doc.save(`shift_report_${safeName}_${selectedMonth}.pdf`)
+      } else {
+        const html = toExcelHTML(headers, rows)
+        const blob = new Blob([html], { type: 'application/vnd.ms-excel' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `shift_report_${safeName}_${selectedMonth}.xls`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      toast({ title: "Export Complete", description: "Shift report has been downloaded." })
+    } catch (e) {
+      toast({ title: "Export Failed", description: (e as Error).message || "Failed to generate shift report", variant: 'destructive' })
+    } finally {
+      setExportingShift(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              Attendance & Salary Details
+            </CardTitle>
+            <div className="flex items-center gap-2 overflow-hidden">
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {months.map((m) => (
+                    <SelectItem key={`month-${m.value}`} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={!canExport || exportingShift} title={!canExport ? "Only admin/supervisor can download" : undefined}>
+                    {exportingShift ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => exportShiftMonthly('pdf')}>PDF</DropdownMenuItem>
+                  {/* <DropdownMenuItem onClick={() => exportShiftMonthly('xls')}>Excel</DropdownMenuItem> */}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-2 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-col items-center text-center">
+                  <div className="text-3xl font-bold text-primary mb-1">{attendanceRate}%</div>
+                  <p className="text-sm text-muted-foreground">Attendance Rate</p>
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-col items-center text-center">
+                  <div className="text-3xl font-bold text-green-600 flex items-center gap-1">
+                    <IndianRupee className="w-6 h-6" />
+                    {totalPay.toLocaleString()}
+                  </div>
+                  <p className="text-sm text-muted-foreground">Total Salary</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardContent className="p-4 space-y-3">
+              <h4 className="font-medium flex items-center gap-2">
+                <Calculator className="w-4 h-4" />
+                Salary Breakdown
+              </h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Per-Shift Rate:</span>
+                  <span className="font-medium">₹{perShiftRate.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Recorded Days:</span>
+                  <span className="font-medium">{recordedDays} days</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Shifts:</span>
+                  <span className="font-medium text-blue-600">+{totalShifts}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Working Days:</span>
+                  <span className="font-medium">{totalWorkingDays} days</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-semibold">
+                  <span>Monthly Earnings:</span>
+                  <div className="text-right">
+                    <div className="text-green-600">₹{totalPay.toLocaleString()}</div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="space-y-4">
+            <div>
+              <h4 className="font-medium mb-3 flex items-center gap-2">
+                <Calendar className="w-4 h-4" />
+                {selectedMonthLabel} Calendar
+              </h4>
+              <div className="grid grid-cols-7 gap-1 mb-2 text-xs text-center font-medium text-muted-foreground">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                  <div key={d} className="p-2">
+                    {d}
+                  </div>
+                ))}
+              </div>
+              <TooltipProvider>
+                <div className="grid grid-cols-7 gap-1">
+                  {calendarData.map((day, idx) => {
+                    let className = "aspect-square p-2 text-sm rounded-md flex items-center justify-center border"
+                    let tooltip = ""
+
+                    if (!day.isCurrentMonth) {
+                      className += " text-muted-foreground/50"
+                    } else if (day.isSunday) {
+                      className += " bg-gray-50 text-gray-400"
+                      tooltip = "Sunday (Holiday)"
+                    } else if (day.isFuture) {
+                      className += " bg-background text-muted-foreground"
+                      tooltip = "Future date"
+                    } else if (day.status === "Present") {
+                      className += " bg-green-100 text-green-800 font-medium border-green-200"
+                      tooltip = `Recorded: ${day.shifts} shift(s)`
+                    } else if (day.status === "Absent") {
+                      className += " bg-red-100 text-red-800 font-medium border-red-200"
+                      tooltip = "No shifts recorded"
+                    }
+
+                    return (
+                      <Tooltip key={`day-${idx}`}>
+                        <TooltipTrigger asChild>
+                          <button
+                            disabled={!day.isCurrentMonth || day.isSunday || day.isFuture}
+                            onClick={() => {
+                              if (!day.key) return
+                            const r = monthFiltered.find((x) => new Date(x.date).toISOString().split("T")[0] === day.key)
+                              setEditDateKey(day.key)
+                              setEditShifts(r?.shifts || 0)
+                              setEditOpen(true)
+                            }}
+                            className={className}
+                          >
+                            {day.isCurrentMonth ? day.date : ""}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <div className="text-xs">{tooltip}</div>
+                        </TooltipContent>
+                      </Tooltip>
+                    )
+                  })}
+                </div>
+              </TooltipProvider>
+            </div>
+
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-green-200 border border-green-300" /> Recorded</div>
+              <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-red-200 border border-red-300" /> Absent</div>
+              <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-gray-200 border border-gray-300" /> Holiday</div>
+            </div>
+          </div>
+
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Shift Details</DialogTitle>
+                <DialogDescription>Only shift count can be edited for {editDateKey || "selected"}. Time, pattern, and breaks are fixed.</DialogDescription>
+              </DialogHeader>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Shifts</Label>
+                  <Select value={String(editShifts)} onValueChange={(v) => setEditShifts(Number(v))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[0,0.5,1,1.5,2,2.5,3].map((n) => (
+                        <SelectItem key={`sv-${n}`} value={String(n)}>{String(n)}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline">Cancel</Button>
+                </DialogClose>
+                <Button onClick={async () => {
+                  if (!editDateKey || !projectId) return
+                  try {
+                    // Optimistic realtime sync to parent for today's edits
+                    const prevRow = shiftRows.find((r) => new Date(r.date).toISOString().split("T")[0] === editDateKey)
+                    const optimisticPerShift = (prevRow?.perShiftSalary) || perShiftRate || 0
+                    onRealtimeUpdate?.({ employeeId, projectId, date: editDateKey!, shifts: editShifts, perShiftSalary: optimisticPerShift })
+
+                    const res = await fetch(`/api/employee-shifts`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        employeeId,
+                        projectId,
+                        date: editDateKey,
+                        shifts: editShifts,
+                        perShiftSalary:
+                          (shiftRows.find((r) => new Date(r.date).toISOString().split("T")[0] === editDateKey)?.perShiftSalary) ||
+                          perShiftRate ||
+                          0,
+                      }),
+                    })
+                    const body = await res.json().catch(() => ({}))
+                    if (!res.ok) throw new Error((body as any)?.message || "Failed to update shift")
+                    setShiftRows((prev) => {
+                      const next = prev.filter((r) => new Date(r.date).toISOString().split("T")[0] !== editDateKey)
+                      next.push({
+                        _id: String((body as any)?._id || `${employeeId}-${editDateKey}`),
+                        employeeId,
+                        projectId: projectId || undefined,
+                        date: new Date(`${editDateKey}T00:00:00.000Z`).toISOString(),
+                        shifts: editShifts,
+                        perShiftSalary: (prev.find((r) => new Date(r.date).toISOString().split("T")[0] === editDateKey)?.perShiftSalary) || perShiftRate || 0,
+                        totalPay: (editShifts || 0) * (((prev.find((r) => new Date(r.date).toISOString().split("T")[0] === editDateKey)?.perShiftSalary) || perShiftRate || 0)),
+                      })
+                      return next
+                    })
+                    setDetailsMap((prev) => ({
+                      ...prev,
+                      [editDateKey!]: {
+                        status: (editShifts || 0) > 0 ? "recorded" : "incomplete",
+                      },
+                    }))
+                    toast({ title: "Saved", description: "Shift details updated", variant: "default" })
+                    setEditOpen(false)
+                  } catch (e) {
+                    console.error(e)
+                    // Revert optimistic update on failure
+                    const prevRow = shiftRows.find((r) => new Date(r.date).toISOString().split("T")[0] === editDateKey)
+                    const revertPerShift = (prevRow?.perShiftSalary) || perShiftRate || 0
+                    onRealtimeUpdate?.({ employeeId, projectId, date: editDateKey!, shifts: prevRow?.shifts ?? 0, perShiftSalary: revertPerShift })
+                    toast({ title: "Error", description: (e as Error).message || "Failed to save shift", variant: "destructive" })
+                  }
+                }}>Save</Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </CardContent>
+      </Card>
+    </div>
+  )
 }
 
 type IProject = {
@@ -149,12 +742,19 @@ function CombinedAttendanceView({
   dailySalary,
   initialMonth,
   projectId,
+  employee,
+  projectTitle,
 }: {
   employeeId: string
   dailySalary: number
   initialMonth?: string
   projectId?: string | null
+  employee: Employee
+  projectTitle?: string
 }) {
+  const { toast } = useToast()
+  const { data: session } = useSession()
+  const canExport = (session?.user?.role === "superadmin" || session?.user?.role === "supervisor")
   const [attendanceMap, setAttendanceMap] = useState<Record<string, AttendanceStatus>>({})
   const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState(initialMonth || new Date().toISOString().slice(0, 7))
@@ -166,6 +766,14 @@ function CombinedAttendanceView({
   const [totalWorkingDays, setTotalWorkingDays] = useState(0)
   const [attendanceRate, setAttendanceRate] = useState(0)
   const [attendanceData, setAttendanceData] = useState<AttendanceRecord[]>([])
+  const [exportingAttendance, setExportingAttendance] = useState(false)
+
+  // Edit dialog state
+  const [editOpen, setEditOpen] = useState(false)
+  const [editDateKey, setEditDateKey] = useState<string | null>(null)
+  const [editStatus, setEditStatus] = useState<AttendanceStatus>("Present")
+  const [editReason, setEditReason] = useState<string>("")
+  const [editPaid, setEditPaid] = useState<boolean>(true)
 
   useEffect(() => {
     const fetchAttendance = async () => {
@@ -342,6 +950,282 @@ function CombinedAttendanceView({
     return days
   }, [attendanceMap, leaveInfoMap, startDayIdx, daysInMonth, monthNum, year])
 
+  const onDayClick = (day: {
+    dateKey?: string
+    isCurrentMonth: boolean
+    isFuture: boolean
+    isSunday: boolean
+    status?: AttendanceStatus
+    leaveInfo?: { status: "paid" | "unpaid" | "pending"; reason?: string }
+  }) => {
+    if (!day.isCurrentMonth || day.isFuture || day.isSunday || !day.dateKey) return
+    setEditDateKey(day.dateKey)
+    setEditStatus(day.status || "Absent")
+    setEditReason(day.leaveInfo?.reason || "")
+    setEditPaid(day.leaveInfo?.status === "unpaid" ? false : true)
+    setEditOpen(true)
+  }
+
+  const escapeCell = (s: string) => s.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch] as string))
+  const toExcelHTML = (
+    headers: string[],
+    rows: (string | number | boolean | null)[][],
+    summary?: { presentDays: number; dailySalary: number; totalSalary: number }
+  ) => {
+    const formatINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.isFinite(n) ? n : 0)
+    const thead = '<tr>' + headers.map((h) => `<th>${escapeCell(h)}</th>`).join('') + '</tr>'
+    const tbody = rows
+      .map((r) => '<tr>' + r.map((c) => `<td title="${escapeCell(String(c ?? ''))}">${escapeCell(String(c ?? ''))}</td>`).join('') + '</tr>')
+      .join('')
+    const tfoot = summary
+      ? `<tfoot>
+          <tr>
+            <td colspan="${headers.length}">
+              <div style="padding:8px">
+                <strong>Salary Summary</strong><br/>
+                Total Days Present: ${summary.presentDays}<br/>
+                Daily Salary × Present Days: ${formatINR(summary.dailySalary)} × ${summary.presentDays}<br/>
+                <strong>Total Monthly Salary: ${formatINR(summary.totalSalary)}</strong>
+              </div>
+            </td>
+          </tr>
+        </tfoot>`
+      : ''
+    const styles = `
+      <style>
+        table{border-collapse:collapse;width:100%;table-layout:fixed}
+        th,td{border:1px solid #ddd;padding:6px;text-align:left;vertical-align:top}
+        th{background:#1e82f0;color:#fff}
+        tr:nth-child(even){background:#f5f5f5}
+        td{white-space:normal;word-wrap:break-word}
+        @media (max-width:600px){th,td{font-size:12px;padding:4px}}
+      </style>
+    `
+    return `${styles}<table><thead>${thead}</thead><tbody>${tbody}</tbody>${tfoot}</table>`
+  }
+  const exportAttendanceMonthly = async (format: 'pdf' | 'xls') => {
+    if (!projectId) {
+      toast({ title: "Missing Project", description: "Please select or set a project before exporting.", variant: "destructive" })
+      return
+    }
+    if (!canExport) {
+      toast({ title: "No Export Permission", description: "Only administrators or supervisors can download attendance details.", variant: "destructive" })
+      return
+    }
+    try {
+      setExportingAttendance(true)
+      toast({ title: "Exporting", description: `Generating attendance details for ${selectedMonth}...` })
+      const headers = ["Date", "Status", "Leave Reason", "Is Paid"]
+      const safeDaily = Number(dailySalary || 0)
+      const presentDaysCalc = (attendanceData || []).reduce((acc, rec) => {
+        const s = (rec as any).status
+        const isPresent = s === "Present" || s === "On Duty" || (rec as any).present === true
+        return acc + (isPresent ? 1 : 0)
+      }, 0)
+      const totalMonthlySalary = Math.max(0, safeDaily * presentDaysCalc)
+      const rows = (attendanceData || []).map((rec) => {
+        const d = rec.date ? new Date(rec.date) : null
+        const key = d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0] : ''
+        const status = String((rec as any).status ?? "")
+        // Normalize/sanitize leave reason and handle special characters/newlines
+        const leaveReason = String((rec as any).leaveReason ?? "").replace(/[\r\n]+/g, " ")
+        let isPaidText = ""
+        if (status === "Absent") {
+          const approved = (rec as any).isLeaveApproved
+          const paid = (rec as any).isLeavePaid
+          isPaidText = approved === false ? "Pending" : paid ? "Yes" : "No"
+        } else {
+          // Present or On Duty considered paid work day
+          isPaidText = "Yes"
+        }
+        return [key, status, leaveReason, isPaidText]
+      })
+      // Use employee name (fallback to ID) in exported filenames
+      const safeName = ((employee?.name || employeeId || 'employee').toString()).trim().replace(/\s+/g, '-')
+      if (format === 'pdf') {
+        const doc = new jsPDF()
+        doc.setFontSize(14)
+        doc.text(`Attendance Report - ${selectedMonth}`, 14, 18)
+        doc.setFontSize(10)
+        doc.text(`Employee: ${employee?.name || employeeId}`, 14, 26)
+        if (employee?.phone) doc.text(`Phone: ${employee.phone}`, 14, 30)
+        if (employee?.role) doc.text(`Role: ${employee.role}`, 14, 34)
+        doc.text(`Work Type: ${employee?.workType || 'Monthly'}`, 90, 26)
+        doc.text(`Daily Salary: ${String(dailySalary)}`, 90, 30)
+        if (projectTitle) doc.text(`Project: ${projectTitle}`, 90, 34)
+
+        const startY = 40
+        autoTable(doc, {
+          head: [headers],
+          body: rows,
+          startY,
+          styles: { fontSize: 8, cellPadding: 3, overflow: "linebreak" },
+          headStyles: { fillColor: [33, 150, 243], textColor: 255 },
+          columnStyles: { 2: { cellWidth: "wrap" } },
+        })
+        const tableBottomY = (doc as any).lastAutoTable?.finalY || (startY + 6)
+        const formatINR = (n: number) => new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number.isFinite(n) ? n : 0)
+        doc.setFontSize(10)
+        doc.setFont("helvetica", "bold")
+        doc.text("Salary Summary", 14, tableBottomY + 8)
+        doc.setFont("helvetica", "normal")
+        let y = tableBottomY + 14
+        doc.text(`Total Days Present: ${presentDaysCalc}`, 14, y)
+        y += 5
+        doc.text(`Daily Salary × Present Days: ${formatINR(safeDaily)} × ${presentDaysCalc}`, 14, y)
+        y += 5
+        doc.text(`Total Monthly Salary: ${formatINR(totalMonthlySalary)}`, 14, y)
+        doc.save(`attendance_${safeName}_${selectedMonth}.pdf`)
+      } else {
+        const html = toExcelHTML(headers, rows, { presentDays: presentDaysCalc, dailySalary: safeDaily, totalSalary: totalMonthlySalary })
+        const blob = new Blob([html], { type: 'application/vnd.ms-excel' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `attendance_${safeName}_${selectedMonth}.xls`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      toast({ title: "Export Complete", description: "Attendance details have been downloaded." })
+    } catch (e) {
+      toast({ title: "Export Failed", description: (e as Error).message || "Failed to generate attendance details", variant: 'destructive' })
+    } finally {
+      setExportingAttendance(false)
+    }
+  }
+
+  const submitEdit = async () => {
+    if (!editDateKey) return
+    if (!projectId) {
+      toast({ title: "Select project", description: "Attendance is project-scoped. Please select a project.", variant: "destructive" })
+      return
+    }
+    try {
+      const leaveReason = editStatus === "Absent" ? (editReason?.trim() || null) : null
+      const isPaid = editStatus === "Absent" ? editPaid : true
+      const savingToast = toast({ title: "Saving...", description: `Updating ${editDateKey} attendance`, variant: "default" })
+      const response = await fetch("/api/attendance/monthly-employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ employeeId, projectId, date: editDateKey, status: editStatus, leaveReason, isPaid }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error((data as any)?.message || "Failed to update attendance")
+
+      // Optimistically update local state
+      setAttendanceData((prev) => {
+        const dateISO = new Date(`${editDateKey}T00:00:00.000Z`).toISOString()
+        let replaced = false
+        const updated = prev.map((rec) => {
+          const d = new Date(rec.date)
+          const key = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split("T")[0]
+          if (key === editDateKey) {
+            replaced = true
+            return {
+              ...rec,
+              status: editStatus,
+              leaveReason,
+              // Reflect leave processing flags immediately in UI (matches backend behavior)
+              isLeaveApproved: editStatus === "Absent" ? (leaveReason ? true : false) : false,
+              isLeavePaid: editStatus === "Absent" ? (leaveReason ? isPaid : false) : false,
+              isPaid,
+              present: editStatus === "Present" || editStatus === "On Duty",
+              updatedAt: new Date().toISOString(),
+            }
+          }
+          return rec
+        })
+        if (!replaced) {
+          updated.push({
+            _id: (data as any)?.record?._id || `${employeeId}-${editDateKey}`,
+            employeeId,
+            date: dateISO,
+            status: editStatus,
+            present: editStatus === "Present" || editStatus === "On Duty",
+            leaveReason,
+            isLeaveApproved: editStatus === "Absent" ? (leaveReason ? true : false) : false,
+            isLeavePaid: editStatus === "Absent" ? (leaveReason ? isPaid : false) : false,
+            isPaid,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          })
+        }
+
+        // Recompute attendanceMap and counters based on updated
+        const map: Record<string, AttendanceStatus> = {}
+        let present = 0
+        let onDuty = 0
+        let paid = 0
+        let unpaid = 0
+        let pending = 0
+        updated.forEach((record) => {
+          if (!record.date) return
+          const d = new Date(record.date)
+          const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+          const key = local.toISOString().split("T")[0]
+          map[key] = (record.status as AttendanceStatus) || "Absent"
+          if (record.status === "Present") present++
+          else if (record.status === "On Duty") onDuty++
+          else if (record.status === "Absent") {
+            if (record.isLeaveApproved === true) {
+              const isPaidLeave = record.isLeavePaid === true || record.isPaid === true
+              if (isPaidLeave) paid++
+              else unpaid++
+            } else {
+              pending++
+            }
+          }
+        })
+        setAttendanceMap(map)
+
+        const [currentYear, currentMonth] = selectedMonth.split("-").map(Number)
+        const daysInMonth = new Date(currentYear, currentMonth, 0).getDate()
+        let workingDays = 0
+        const today = new Date()
+        for (let day = 1; day <= daysInMonth; day++) {
+          const date = new Date(Date.UTC(currentYear, currentMonth - 1, day))
+          if (date > today) continue
+          const dayOfWeek = date.getUTCDay()
+          if (dayOfWeek === 0) continue // Sunday
+          workingDays++
+        }
+        setPresentDays(present)
+        setOnDutyDays(onDuty)
+        setPaidLeaveDays(paid)
+        setUnpaidLeaveDays(unpaid)
+        setPendingLeaveDays(pending)
+        setTotalWorkingDays(workingDays)
+        const effective = present + onDuty + paid
+        setAttendanceRate(workingDays > 0 ? Math.round((effective / workingDays) * 100) : 0)
+
+        return updated
+      })
+
+      toast({ title: "Saved", description: "Attendance updated", variant: "default" })
+      setEditOpen(false)
+      // Refresh from backend to confirm DB state and maintain consistency for this day
+      try {
+        const res = await fetch(`/api/attendance?date=${editDateKey}&projectId=${projectId}&monthlyEmployees=true`, { cache: "no-store" })
+        const body = await res.json().catch(() => ({}))
+        if (res.ok && body?.success) {
+          const records: AttendanceRecord[] = body.data || []
+          setAttendanceData((prev) => {
+            const dayKey = editDateKey
+            const withoutDay = prev.filter((r) => {
+              if (!r.date) return true
+              const k = new Date(r.date).toISOString().split("T")[0]
+              return k !== dayKey
+            })
+            return [...withoutDay, ...records]
+          })
+        }
+      } catch {}
+    } catch (e) {
+      console.error(e)
+      toast({ title: "Error", description: (e as Error).message || "Failed to update attendance", variant: "destructive" })
+    }
+  }
+
   const totalSalary = (presentDays + paidLeaveDays + onDutyDays) * dailySalary
 
   if (loading) {
@@ -361,18 +1245,36 @@ function CombinedAttendanceView({
               <Calendar className="w-5 h-5" />
               Attendance & Salary Details
             </CardTitle>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger className="w-48">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {months.map((m) => (
-                  <SelectItem key={`month-${m.value}`} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2 overflow-hidden">
+              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                <SelectTrigger className="w-48">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {months.map((m) => (
+                    <SelectItem key={`month-${m.value}`} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={!canExport || exportingAttendance} title={!canExport ? "仅管理员/主管可下载" : undefined}>
+                    {exportingAttendance ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => exportAttendanceMonthly('pdf')}>PDF</DropdownMenuItem>
+                  {/* <DropdownMenuItem onClick={() => exportAttendanceMonthly('xls')}>Excel</DropdownMenuItem> */}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -497,8 +1399,13 @@ function CombinedAttendanceView({
                       tooltip = "No attendance record"
                     }
 
+                    // Make eligible days clickable for editing
+                    if (day.isCurrentMonth && !day.isFuture && !day.isSunday) {
+                      className += " cursor-pointer"
+                    }
+
                     const cell = (
-                      <div className={className} key={idx}>
+                      <div className={className} key={idx} onClick={() => onDayClick(day)}>
                         {day.isCurrentMonth ? day.date : ""}
                         {day.isCurrentMonth && !day.status && !day.isFuture && !day.isSunday && (
                           <HelpCircle className="w-2 h-2 ml-1 text-muted-foreground" />
@@ -525,6 +1432,57 @@ function CombinedAttendanceView({
                   })}
                 </div>
               </TooltipProvider>
+
+              {/* Edit Attendance Dialog */}
+              <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Edit Attendance</DialogTitle>
+                    <DialogDescription>
+                      {editDateKey ? `Editing ${editDateKey}` : "Select a day to edit attendance."}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label>Status</Label>
+                      <Select value={editStatus || "Absent"} onValueChange={(v) => setEditStatus(v as AttendanceStatus)}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Choose status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {attendanceOptions.map((opt) => (
+                            <SelectItem key={`opt-${opt.value}`} value={opt.value}>{opt.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {editStatus === "Absent" && (
+                      <div className="space-y-1">
+                        <Label>Leave Reason</Label>
+                        <Textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} placeholder="Enter reason (optional)" />
+                      </div>
+                    )}
+                    {editStatus === "Absent" && (
+                      <div className="space-y-1">
+                        <Label>Leave Type</Label>
+                        <Select value={editPaid ? "paid" : "unpaid"} onValueChange={(v) => setEditPaid(v === "paid") }>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="paid">Paid</SelectItem>
+                            <SelectItem value="unpaid">Unpaid</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+                    <Button onClick={submitEdit}>Save</Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
 
               <div className="flex justify-center gap-4 mt-4 text-xs">
                 <div className="flex items-center gap-2">
@@ -558,7 +1516,24 @@ interface Employee {
   email?: string
   phone: string
   role: string
-  salary: number
+  position?: string
+  baseSalary: number
+  paymentFrequency: "monthly" | "bi-weekly" | "weekly"
+  bankAccountDetails?: {
+    bankName: string
+    accountNumber: string
+    ifscCode: string
+  }
+  taxWithholdingInformation?: {
+    panNumber: string
+    tdsPercentage: number
+  }
+  historicalSalaryRecords?: Array<{
+    date: string
+    amount: number
+    reason: string
+  }>
+  paymentStatus?: "Paid" | "Pending" | "Overdue"
   workType: "Daily" | "Monthly" | "Contract"
   status: "Active" | "On Leave" | "Inactive"
   joinDate: string
@@ -570,12 +1545,34 @@ interface Employee {
   skills?: string[]
   createdAt: string
   updatedAt: string
+  projectId?: string
+  assignedProjects?: any[]
   attendance?: {
     present: boolean
     checkIn?: string
     checkOut?: string
     status?: AttendanceStatus
   }
+  shiftsWorked?: number
+}
+
+interface ReportRow {
+  employeeId: string
+  employeeName: string
+  phone?: string
+  role?: string
+  workType: "Daily" | "Monthly" | "Contract"
+  baseSalary: number
+  assignedProjectTitles: string
+  preferredProjectId?: string | null
+  preferredProjectTitle?: string
+  status: AttendanceStatus | null
+  present: boolean
+  checkIn?: string
+  checkOut?: string
+  shiftsToday?: number
+  perShiftSalary?: number
+  totalShiftPay?: number
 }
 
 export default function EmployeesManagement() {
@@ -611,6 +1608,13 @@ export default function EmployeesManagement() {
       { status: AttendanceStatus; checkIn?: string; checkOut?: string; present: boolean; projectId: string }
     >
   >({})
+
+  // Report aggregation state
+  const [reportRows, setReportRows] = useState<ReportRow[]>([])
+  const [reportLoading, setReportLoading] = useState<boolean>(false)
+  const [showReportPreview, setShowReportPreview] = useState<boolean>(false)
+  const [exportingPdf, setExportingPdf] = useState<boolean>(false)
+  const [exportingExcel, setExportingExcel] = useState<boolean>(false)
 
   const fetchAllProjects = async () => {
     try {
@@ -674,6 +1678,243 @@ export default function EmployeesManagement() {
     const perShift = typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : (emp.salary || 0)
     return shifts * perShift
   }
+
+  // Map project ids to titles for displaying in reports
+  const projectTitleMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    try {
+      (projects || []).forEach((p: any) => {
+        const id = String(p?._id || p?.id || "")
+        const title = String(p?.title || p?.name || "")
+        if (id && title) map[id] = title
+      })
+    } catch {}
+    return map
+  }, [projects])
+
+  // Resolve preferred project id for an employee, based on UI selection and assignments
+  const resolvePreferredProjectId = useCallback((emp: Employee): string | null => {
+    const assigned = Array.isArray((emp as any).assignedProjects) ? (emp as any).assignedProjects : []
+    const uiProjectId = (selectedProject as any)?._id || null
+    if (uiProjectId) return String(uiProjectId)
+    if (assigned.length === 1 && assigned[0]?.projectId) return String(assigned[0].projectId)
+    if ((emp as any).projectId) return String((emp as any).projectId)
+    // Fallback: find attendanceData entry for this employee and use its projectId
+    try {
+      const keyWithSelected = (selectedProject as any)?._id ? `${(selectedProject as any)._id}_${emp._id}` : null
+      if (keyWithSelected && attendanceData[keyWithSelected]) {
+        return String(attendanceData[keyWithSelected].projectId)
+      }
+      for (const [key, val] of Object.entries(attendanceData)) {
+        if (key.endsWith(`_${emp._id}`) && (val as any)?.projectId) {
+          return String((val as any).projectId)
+        }
+      }
+    } catch { }
+    return null
+  }, [selectedProject, attendanceData])
+
+  // Get readable assigned project titles
+  const getAssignedProjectTitles = useCallback((emp: Employee, map: Record<string, string>): string => {
+    const assigned = Array.isArray((emp as any).assignedProjects) ? (emp as any).assignedProjects : []
+    const ids: string[] = []
+    assigned.forEach((a: any) => {
+      if (a?.projectId) ids.push(String(a.projectId))
+      else if (typeof a === "string") ids.push(String(a))
+      else if (a?._id) ids.push(String(a._id))
+    })
+    if ((emp as any).projectId) ids.push(String((emp as any).projectId))
+    const unique = Array.from(new Set(ids))
+    return unique.map((id) => map[id] || id).join(", ")
+  }, [])
+
+  // Build report rows from current employees/attendance/shift data
+  const buildReportRows = useCallback(() => {
+    setReportLoading(true)
+    try {
+      const srcEmployees: Employee[] = selectedProject ? projectEmployees : employees
+      // Apply basic search filter similar to UI search
+      const term = (searchTerm || "").toLowerCase()
+      const filtered = term
+        ? srcEmployees.filter((e) =>
+            [e.name, e.phone, e.role, (e as any).position].filter(Boolean).some((x) => String(x).toLowerCase().includes(term)),
+          )
+        : srcEmployees
+
+      const rows: ReportRow[] = filtered.map((emp) => {
+        const att = emp.attendance
+        const shifts = getProjectShiftCount(emp._id)
+        const perShift = typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : (emp.salary || 0)
+        const totalPay = shifts * perShift
+        const preferredProjectId = resolvePreferredProjectId(emp)
+        const preferredProjectTitle = preferredProjectId ? projectTitleMap[preferredProjectId] || preferredProjectId : undefined
+        return {
+          employeeId: emp._id,
+          employeeName: emp.name,
+          phone: emp.phone,
+          role: emp.role,
+          workType: emp.workType,
+          salary: emp.salary || 0,
+          assignedProjectTitles: getAssignedProjectTitles(emp, projectTitleMap),
+          preferredProjectId,
+          preferredProjectTitle,
+          status: att?.status ?? null,
+          present: att?.present ?? false,
+          checkIn: att?.checkIn,
+          checkOut: att?.checkOut,
+          shiftsToday: shifts,
+          perShiftSalary: perShift,
+          totalShiftPay: totalPay,
+        }
+      })
+      setReportRows(rows)
+    } finally {
+      setReportLoading(false)
+    }
+  }, [employees, projectEmployees, attendanceData, shiftData, selectedProject, projectTitleMap, searchTerm, resolvePreferredProjectId, getAssignedProjectTitles])
+
+  useEffect(() => {
+    buildReportRows()
+  }, [buildReportRows])
+
+  // Export handlers
+  const exportReportPdf = useCallback(async () => {
+    try {
+      setExportingPdf(true)
+      const doc = new jsPDF({ orientation: "landscape" })
+
+      const title = selectedProject
+        ? `Employees Report — ${(selectedProject as any)?.title || (selectedProject as any)?.name}`
+        : "Employees Report"
+      const dateStr = getTodayDateStr()
+
+      doc.setFontSize(16)
+      doc.text(title, 14, 14)
+      doc.setFontSize(11)
+      doc.text(`Date: ${dateStr}`, 14, 22)
+      if (selectedProject) {
+        const statusLine = `Status: ${(selectedProject as any)?.status || "N/A"}`
+        doc.text(statusLine, 120, 22)
+      }
+
+      // Build table columns and data
+      const columns = [
+        { header: "Name", dataKey: "employeeName" },
+        { header: "Phone", dataKey: "phone" },
+        { header: "Role", dataKey: "role" },
+        { header: "Type", dataKey: "workType" },
+        { header: "Salary", dataKey: "salary" },
+        { header: "Assigned Projects", dataKey: "assignedProjectTitles" },
+        { header: "Preferred Project", dataKey: "preferredProjectTitle" },
+        { header: "Status", dataKey: "status" },
+        { header: "Present", dataKey: "present" },
+        { header: "Check-In", dataKey: "checkIn" },
+        { header: "Check-Out", dataKey: "checkOut" },
+        { header: "Shifts", dataKey: "shiftsToday" },
+        { header: "Per Shift", dataKey: "perShiftSalary" },
+        { header: "Total Pay", dataKey: "totalShiftPay" },
+      ]
+      const data = reportRows.map((r) => ({
+        ...r,
+        salary: r.salary ?? 0,
+        present: r.present ? "Yes" : "No",
+        shiftsToday: r.shiftsToday ?? 0,
+        perShiftSalary: r.perShiftSalary ?? 0,
+        totalShiftPay: r.totalShiftPay ?? 0,
+      }))
+
+      autoTable(doc, {
+        columns: columns as any,
+        body: data as any,
+        startY: 28,
+        styles: { fontSize: 8 },
+        headStyles: { fillColor: [33, 150, 243] },
+      })
+
+      // Summary footer
+      const totalEmployees = data.length
+      const totalDailyPay = data.reduce((sum, r) => sum + (r.totalShiftPay || 0), 0)
+      doc.setFontSize(11)
+      doc.text(`Total Employees: ${totalEmployees}`, 14, doc.lastAutoTable.finalY + 10)
+      doc.text(`Daily Shift Pay Total: ₹${(totalDailyPay || 0).toLocaleString("en-IN")}`, 80, doc.lastAutoTable.finalY + 10)
+
+      const filename = selectedProject
+        ? `Employees_Report_${(selectedProject as any)?.title || (selectedProject as any)?.name}_${dateStr}.pdf`
+        : `Employees_Report_${dateStr}.pdf`
+      doc.save(filename)
+    } catch (e) {
+      console.error("PDF export failed", e)
+      toast({ title: "Export Failed", description: "Could not generate PDF report", variant: "destructive" })
+    } finally {
+      setExportingPdf(false)
+    }
+  }, [reportRows, selectedProject])
+
+  const exportReportExcel = useCallback(async () => {
+    try {
+      setExportingExcel(true)
+      // Prepare flat JSON
+      const rows = reportRows.map((r) => ({
+        Name: r.employeeName,
+        Phone: r.phone || "",
+        Role: r.role || "",
+        Type: r.workType,
+        Salary: r.salary || 0,
+        Assigned_Projects: r.assignedProjectTitles || "",
+        Preferred_Project: r.preferredProjectTitle || "",
+        Status: r.status || "",
+        Present: r.present ? "Yes" : "No",
+        Check_In: r.checkIn || "",
+        Check_Out: r.checkOut || "",
+        Shifts: r.shiftsToday || 0,
+        Per_Shift: r.perShiftSalary || 0,
+        Total_Pay: r.totalShiftPay || 0,
+      }))
+
+      const dateStr = getTodayDateStr()
+      const filename = selectedProject
+        ? `Employees_Report_${(selectedProject as any)?.title || (selectedProject as any)?.name}_${dateStr}`
+        : `Employees_Report_${dateStr}`
+
+      // Try dynamic import of xlsx; fallback to CSV on failure
+      try {
+        const XLSX = (await import("xlsx")).default || (await import("xlsx"))
+        const ws = XLSX.utils.json_to_sheet(rows)
+        const wb = XLSX.utils.book_new()
+        XLSX.utils.book_append_sheet(wb, ws, "Report")
+        const out = XLSX.write(wb, { bookType: "xlsx", type: "array" })
+        const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `${filename}.xlsx`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } catch (err) {
+        console.warn("xlsx import failed, falling back to CSV", err)
+        const headers = Object.keys(rows[0] || {})
+        const csv = [headers.join(",")]
+          .concat(rows.map((r) => headers.map((h) => String((r as any)[h] ?? "").replace(/,/g, " ")).join(",")))
+          .join("\n")
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `${filename}.csv`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      }
+    } catch (e) {
+      console.error("Excel export failed", e)
+      toast({ title: "Export Failed", description: "Could not generate Excel/CSV report", variant: "destructive" })
+    } finally {
+      setExportingExcel(false)
+    }
+  }, [reportRows, selectedProject])
 
   // INR currency formatter
   const formatINR = (val: number) =>
@@ -748,8 +1989,8 @@ export default function EmployeesManagement() {
         return false
       }
 
-      // Use project-scoped attendance endpoint
-      const response = await fetch("/api/attendance", {
+      // Use monthly employees project-scoped attendance endpoint
+      const response = await fetch("/api/attendance/monthly-employees", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ employeeId, projectId: projectIdToUse, date: dateStr, status, leaveReason, isPaid, timestamp }),
@@ -885,32 +2126,29 @@ export default function EmployeesManagement() {
         }
       }
 
-      // Update attendanceData state
+      // Update attendanceData state as project-scoped map used by monthly UI
       setAttendanceData((prev) => {
-        const next = { ...prev }
-        for (const emp of employees) {
-          if (emp.workType !== "Monthly") continue
-          const att = attMap.get(emp._id)
-          const attendanceKey = projectId ? `${projectId}_${emp._id}` : `${(att as any)?.projectId || ""}_${emp._id}`
-
-          if (!att) {
-            // If no attendance record found, clear existing entry if it pertains to current view (projectId)
-            if (projectId && attendanceKey in next) {
-              delete next[attendanceKey]
-            } else if (!projectId && attendanceKey in next) {
-              delete next[attendanceKey]
-            }
-            continue
-          }
-
-          const statusNorm = normalizeAttendanceStatus((att as any).status, (att as any).present)
-          next[attendanceKey] = {
+        const next: Record<string, { status: AttendanceStatus; checkIn?: string; checkOut?: string; present: boolean; projectId: string }> = projectId ? { ...prev } : {}
+        for (const [eid, rec] of attMap.entries()) {
+          const recProjectId = String((rec as any)?.projectId || projectId || "")
+          const key = `${projectId || recProjectId}_${eid}`
+          const statusNorm = normalizeAttendanceStatus((rec as any).status, (rec as any).present)
+          next[key] = {
             status: statusNorm,
-            checkIn: att.checkIn || next[attendanceKey]?.checkIn,
-            checkOut: att.checkOut || next[attendanceKey]?.checkOut,
+            checkIn: (rec as any)?.checkIn,
+            checkOut: (rec as any)?.checkOut,
             present: statusNorm === "Present" || statusNorm === "On Duty",
-            projectId: att.projectId,
+            projectId: recProjectId,
           }
+        }
+        if (typeof window !== "undefined" && projectId) {
+          try {
+            const scoped: Record<string, any> = {}
+            for (const [k, v] of Object.entries(next)) {
+              if (k.startsWith(`${projectId}_`)) scoped[k] = v
+            }
+            sessionStorage.setItem(`attendanceData:${projectId}`, JSON.stringify(scoped))
+          } catch {}
         }
         return next
       })
@@ -1128,6 +2366,87 @@ export default function EmployeesManagement() {
       return false
     }
   }
+
+  // Realtime handler: keep project and overview in sync when a shift changes
+  const handleRealtimeShiftUpdate = useCallback(
+    ({ employeeId, projectId: eventProjectId, date, shifts, perShiftSalary }: { employeeId: string; projectId?: string | null; date: string; shifts: number; perShiftSalary?: number }) => {
+      const todayStr = new Date().toISOString().split("T")[0]
+      if (date !== todayStr) return
+      const uiProjectId = (selectedProject as any)?._id || null
+      if (!uiProjectId || (eventProjectId && String(eventProjectId) !== String(uiProjectId))) return
+
+      setShiftData((prev) => {
+        const current = prev[employeeId]
+        const per = typeof perShiftSalary === "number" ? perShiftSalary : (typeof current?.perShiftSalary === "number" ? current.perShiftSalary : ((employees.find((e) => e._id === employeeId)?.salary) || 0))
+        if (current && current.shifts === shifts && current.perShiftSalary === per) return prev
+        const next = { ...prev, [employeeId]: { shifts, perShiftSalary: per, totalPay: shifts * per } }
+        if (typeof window !== "undefined" && uiProjectId) {
+          try { sessionStorage.setItem(`shiftData:${uiProjectId}`, JSON.stringify(next)) } catch {}
+        }
+        return next
+      })
+      setShiftsToday((prev) => ({ ...prev, [employeeId]: clampShift(shifts) }))
+    },
+    [selectedProject, employees]
+  )
+
+  // Generate a simple PDF for a Daily worker's shifts for today
+  // const generateDailyShiftPdf = async (emp: Employee) => {
+  //   const toastId = toast.loading({ title: "Generating PDF...", description: "Preparing daily shift report" })
+  //   try {
+  //     const dateStr = getTodayDateStr()
+
+  //     // Determine effective projectId for this employee (reuse logic similar to saveEmployeeShift)
+  //     const assigned = Array.isArray((emp as any).assignedProjects) ? (emp as any).assignedProjects : []
+  //     let effectiveProjectId: string | null = null
+  //     if (assigned.length === 1) effectiveProjectId = String(assigned[0].projectId)
+  //     else if ((emp as any).projectId) effectiveProjectId = String((emp as any).projectId)
+
+  //     const uiProjectId = (selectedProject as any)?._id || null
+  //     const projectIdToUse = uiProjectId || effectiveProjectId
+  //     if (!projectIdToUse) {
+  //       toast.error({ title: "Select project", description: "Select a project before downloading" })
+  //       toast.dismiss(toastId)
+  //       return
+  //     }
+
+  //     const projectTitle = (selectedProject as any)?.name || (selectedProject as any)?.title || "Project"
+  //     const shifts = typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0
+  //     const perShift = typeof shiftData[emp._id]?.perShiftSalary === "number"
+  //       ? (shiftData[emp._id]!.perShiftSalary as number)
+  //       : (emp.salary || 0)
+  //     const total = Number((shifts * perShift).toFixed(2))
+
+  //     const doc = new jsPDF()
+  //     doc.setFontSize(16)
+  //     doc.text("Daily Shifts Report", 14, 18)
+  //     doc.setFontSize(10)
+  //     doc.text(`Date: ${dateStr}`, 14, 26)
+  //     doc.text(`Project: ${projectTitle}`, 14, 32)
+
+  //     autoTable(doc, {
+  //       head: [["Employee", "Role", "Shifts", "Per-Shift (₹)", "Total (₹)"]],
+  //       body: [[
+  //         emp.name,
+  //         (emp.role || "Employee"),
+  //         String(shifts),
+  //         new Intl.NumberFormat("en-IN").format(perShift),
+  //         new Intl.NumberFormat("en-IN").format(total),
+  //       ]],
+  //       startY: 40,
+  //       styles: { fontSize: 10 },
+  //       headStyles: { fillColor: [22, 160, 133] },
+  //     })
+
+  //     doc.save(`Daily_Shifts_${emp.name}_${dateStr}.pdf`)
+  //     toast.success("PDF downloaded")
+  //   } catch (e) {
+  //     console.error("PDF generation failed", e)
+  //     toast.error("Failed to generate PDF")
+  //   } finally {
+  //     toast.dismiss(toastId)
+  //   }
+  // }
 
   // Form state
   const [formData, setFormData] = useState({
@@ -2072,6 +3391,14 @@ export default function EmployeesManagement() {
                                   <SelectItem value="3">3</SelectItem>
                                 </SelectContent>
                               </Select>
+                              {/* <Button
+                                variant="outline"
+                                size="sm"
+                                className="inline-flex items-center gap-1"
+                                onClick={() => generateDailyShiftPdf(employee)}
+                              >
+                                <Download className="w-4 h-4" /> Download
+                              </Button> */}
                             </div>
                           </div>
                           {/* <div className="mt-2 flex items-center justify-between text-xs">
@@ -2835,6 +4162,20 @@ export default function EmployeesManagement() {
                       dailySalary={selectedEmployee.salary}
                       initialMonth={new Date().toISOString().slice(0, 7)}
                       projectId={selectedProject?._id || null}
+                      employee={selectedEmployee}
+                      projectTitle={selectedProject?.title}
+                    />
+                  )}
+
+                  {/* Combined Shift View for Daily (Shift) Employees */}
+                  {selectedEmployee.workType === "Daily" && (
+                    <CombinedShiftView
+                      employeeId={selectedEmployee._id}
+                      initialMonth={new Date().toISOString().slice(0, 7)}
+                      projectId={selectedProject?._id || null}
+                      onRealtimeUpdate={handleRealtimeShiftUpdate}
+                      employee={selectedEmployee}
+                      projectTitle={selectedProject?.title}
                     />
                   )}
 

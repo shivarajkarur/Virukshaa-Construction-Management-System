@@ -1,4 +1,4 @@
-  "use client"
+"use client"
 
   import { useEffect, useMemo, useState } from "react"
   import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -260,7 +260,7 @@
         const now = new Date()
         const timestamp = now.toISOString()
 
-        const response = await fetch("/api/attendance", {
+        const response = await fetch("/api/attendance/monthly-employees", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
