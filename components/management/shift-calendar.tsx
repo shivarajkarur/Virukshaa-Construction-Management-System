@@ -68,7 +68,7 @@ function colorForShifts(n: number): string {
 
 function clampHalf(n: number): number {
   const rounded = Math.round((n ?? 0) * 2) / 2
-  return Math.max(0, Math.min(3, rounded))
+  return Math.max(0, Math.min(50, rounded))
 }
 
 export default function ShiftCalendar({ employeeId, projectId = null, perShiftSalary, initialMonth }: ShiftCalendarProps) {

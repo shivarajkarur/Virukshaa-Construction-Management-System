@@ -1659,10 +1659,10 @@ export default function EmployeesManagement() {
   const [employeeProjects, setEmployeeProjects] = useState<any[]>([])
   const [isLoadingPerformance, setIsLoadingPerformance] = useState(false)
 
-  // Shift tracking (local, per-day): 0-3 shifts per employee for calculations
+  // Shift tracking (local, per-day): 0–50 shifts per employee for calculations
   const [shiftsToday, setShiftsToday] = useState<Record<string, number>>({})
   const roundToHalf = (n: number) => Math.round((n ?? 0) * 2) / 2
-  const clampShift = (n: number) => Math.max(0, Math.min(3, roundToHalf(n)))
+  const clampShift = (n: number) => Math.max(0, Math.min(50, roundToHalf(n)))
   // Prefer project-scoped shift data; fall back to local state only when needed
   const getProjectShiftCount = (id: string) => {
     const s = shiftData[id]?.shifts
@@ -3329,21 +3329,31 @@ export default function EmployeesManagement() {
                             <div className="text-sm font-medium flex items-center gap-2">
                               <Clock className="w-4 h-4" /> Shifts Today
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Select
+                            <div className="space-y-2">
+                              <Label htmlFor={`shift-count-${employee._id}`}>Shift *</Label>
+                              <Input
+                                id={`shift-count-${employee._id}`}
+                                list={`shift-options-${employee._id}`}
+                                type="number"
+                                inputMode="decimal"
+                                step={0.5}
+                                className="w-28 h-8"
+                                placeholder="Select or type a shift"
+                                required
+                                aria-label="Shift count"
+                                aria-describedby={`shift-help-${employee._id}`}
+                                title="Select or type a shift (0–50, 0.5 steps)"
+                                min={0}
+                                max={50}
                                 value={String(
                                   typeof shiftData[employee._id]?.shifts === "number"
                                     ? shiftData[employee._id]!.shifts
                                     : 0
                                 )}
-                                onValueChange={async (val) => {
-                                  const next = Number(val)
-                                  console.debug("[ProjectView] Select shift count", {
-                                    employeeId: employee._id,
-                                    projectId: (selectedProject as any)?._id || null,
-                                    to: next,
-                                  })
-                                  // Update project-scoped local UI state immediately
+                                onChange={(e) => {
+                                  const raw = e.target.value.trim()
+                                  const val = Number(raw)
+                                  if (!Number.isFinite(val)) return
                                   setShiftData((prev) => {
                                     const perShift =
                                       typeof prev[employee._id]?.perShiftSalary === "number"
@@ -3352,53 +3362,108 @@ export default function EmployeesManagement() {
                                     return {
                                       ...prev,
                                       [employee._id]: {
-                                        shifts: next,
+                                        shifts: val,
                                         perShiftSalary: perShift,
-                                        totalPay: perShift * next,
+                                        totalPay: perShift * val,
                                       },
                                     }
                                   })
-
-                                  // Attempt backend save on selection
-                                  const ok = await saveEmployeeShift(employee, next)
+                                }}
+                                onKeyDown={async (e: React.KeyboardEvent<HTMLInputElement>) => {
+                                  if (e.key !== "Enter") return
+                                  const target = e.currentTarget
+                                  const raw = target.value.trim()
+                                  const val = Number(raw)
+                                  const prevVal =
+                                    typeof shiftData[employee._id]?.shifts === "number"
+                                      ? shiftData[employee._id]!.shifts
+                                      : 0
+                                  const validHalfStep = Math.round(val * 2) === val * 2
+                                  if (!Number.isFinite(val) || val < 0 || val > 50 || !validHalfStep) {
+                                    toast.error("Please enter a valid shift value (0–50, in 0.5 steps).")
+                                    target.setAttribute("aria-invalid", "true")
+                                    target.value = String(prevVal)
+                                    return
+                                  }
+                                  target.removeAttribute("aria-invalid")
+                                  setShiftData((prev) => {
+                                    const perShift =
+                                      typeof prev[employee._id]?.perShiftSalary === "number"
+                                        ? prev[employee._id]!.perShiftSalary!
+                                        : (employee.salary || 0)
+                                    return {
+                                      ...prev,
+                                      [employee._id]: {
+                                        shifts: val,
+                                        perShiftSalary: perShift,
+                                        totalPay: perShift * val,
+                                      },
+                                    }
+                                  })
+                                  const ok = await saveEmployeeShift(employee, val)
                                   if (!ok) {
                                     toast.error("Shift Save Failed")
-                                    console.warn("[ProjectView] Shift save failed after select", {
-                                      employeeId: employee._id,
-                                      projectId: (selectedProject as any)?._id || null,
-                                      to: next,
-                                    })
                                   } else {
                                     toast.success("Shift Saved")
-                                    console.debug("[ProjectView] Shift saved after select", {
-                                      employeeId: employee._id,
-                                      projectId: (selectedProject as any)?._id || null,
-                                      to: next,
-                                    })
                                   }
                                 }}
-                              >
-                                <SelectTrigger className="w-20 h-8">
-                                  <SelectValue placeholder="0" />
-                                </SelectTrigger>
-                                <SelectContent align="start">
-                                  <SelectItem value="0">0</SelectItem>
-                                  <SelectItem value="0.5">0.5</SelectItem>
-                                  <SelectItem value="1">1</SelectItem>
-                                  <SelectItem value="1.5">1.5</SelectItem>
-                                  <SelectItem value="2">2</SelectItem>
-                                  <SelectItem value="2.5">2.5</SelectItem>
-                                  <SelectItem value="3">3</SelectItem>
-                                </SelectContent>
-                              </Select>
-                              {/* <Button
-                                variant="outline"
-                                size="sm"
-                                className="inline-flex items-center gap-1"
-                                onClick={() => generateDailyShiftPdf(employee)}
-                              >
-                                <Download className="w-4 h-4" /> Download
-                              </Button> */}
+                                onBlur={async (e: React.FocusEvent<HTMLInputElement>) => {
+                                  const target = e.currentTarget
+                                  if (!target.value) return
+                                  const raw = target.value.trim()
+                                  const val = Number(raw)
+                                  const prevVal =
+                                    typeof shiftData[employee._id]?.shifts === "number"
+                                      ? shiftData[employee._id]!.shifts
+                                      : 0
+                                  const validHalfStep = Math.round(val * 2) === val * 2
+                                  if (!Number.isFinite(val) || val < 0 || val > 50 || !validHalfStep) {
+                                    toast.error("Please enter a valid shift value (0–50, in 0.5 steps).")
+                                    target.setAttribute("aria-invalid", "true")
+                                    target.value = String(prevVal)
+                                    return
+                                  }
+                                  target.removeAttribute("aria-invalid")
+                                  setShiftData((prev) => {
+                                    const perShift =
+                                      typeof prev[employee._id]?.perShiftSalary === "number"
+                                        ? prev[employee._id]!.perShiftSalary!
+                                        : (employee.salary || 0)
+                                    return {
+                                      ...prev,
+                                      [employee._id]: {
+                                        shifts: val,
+                                        perShiftSalary: perShift,
+                                        totalPay: perShift * val,
+                                      },
+                                    }
+                                  })
+                                  const ok = await saveEmployeeShift(employee, val)
+                                  if (!ok) {
+                                    toast.error("Shift Save Failed")
+                                  } else {
+                                    toast.success("Shift Saved")
+                                  }
+                                }}
+                              />
+                              <datalist id={`shift-options-${employee._id}`}>
+                                <option value="0">0</option>
+                                <option value="0.5">0.5</option>
+                                <option value="1">1</option>
+                                <option value="1.5">1.5</option>
+                                <option value="2">2</option>
+                                <option value="2.5">2.5</option>
+                                <option value="3">3</option>
+                                <option value="4">4</option>
+                                <option value="5">5</option>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                                <option value="30">30</option>
+                                <option value="50">50</option>
+                              </datalist>
+                              <div id={`shift-help-${employee._id}`} className="sr-only">
+                                Select or type a shift value between 0 and 50 in steps of 0.5. Press Enter to save.
+                              </div>
                             </div>
                           </div>
                           {/* <div className="mt-2 flex items-center justify-between text-xs">

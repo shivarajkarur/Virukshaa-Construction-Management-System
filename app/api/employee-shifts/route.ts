@@ -131,9 +131,9 @@ export async function PUT(req: NextRequest) {
     if (isNaN(d.getTime())) {
       return NextResponse.json({ message: "Invalid date" }, { status: 400 });
     }
-    // Support half-shift increments: round to nearest 0.5 and clamp within 0-3
+    // Support half-shift increments: round to nearest 0.5 and clamp within 0-50
     const roundToHalf = (n: number) => Math.round((n ?? 0) * 2) / 2;
-    const clampShift = (n: number) => Math.max(0, Math.min(3, roundToHalf(n)));
+    const clampShift = (n: number) => Math.max(0, Math.min(50, roundToHalf(n)));
     const clampedShifts = clampShift(shifts);
     const totalPay = clampedShifts * perShiftSalary;
 
@@ -208,9 +208,9 @@ export async function POST(req: NextRequest) {
 
     const d = new Date(date);
     d.setUTCHours(0, 0, 0, 0);
-    // Support half-shift increments: round to nearest 0.5 and clamp within 0-3
+    // Support half-shift increments: round to nearest 0.5 and clamp within 0-50
     const roundToHalf = (n: number) => Math.round((n ?? 0) * 2) / 2;
-    const clampShift = (n: number) => Math.max(0, Math.min(3, roundToHalf(n)));
+    const clampShift = (n: number) => Math.max(0, Math.min(50, roundToHalf(n)));
     const clampedShifts = clampShift(shifts);
     const totalPay = clampedShifts * perShiftSalary;
 
