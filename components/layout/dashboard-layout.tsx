@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog"
 import { toast } from "@/components/ui/use-toast"
 import {
   DropdownMenu,
@@ -54,6 +55,8 @@ export default function DashboardLayout({
   const [profileData, setProfileData] = useState<Record<string, any> | null>(null)
   const [lastUpdated, setLastUpdated] = useState<number>(Date.now())
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null)
+  const [isRemovingBg, setIsRemovingBg] = useState<boolean>(false)
+  const [bgDeleteOpen, setBgDeleteOpen] = useState<boolean>(false)
   const { toast } = useToast()
 
   // Load saved background image
@@ -396,24 +399,66 @@ export default function DashboardLayout({
         {/* Background Image Upload */}
         <div className="absolute top-4 right-20 z-10 flex gap-2">
           {backgroundImage && (
-            <button
-              type="button"
-              onClick={() => {
-                setBackgroundImage(null);
-                localStorage.removeItem('dashboardBackground');
-                // Reset the file input
-                const fileInput = document.getElementById('background-upload') as HTMLInputElement;
-                if (fileInput) fileInput.value = '';
-                toast({
-                  title: 'Background Removed',
-                  description: 'Dashboard background has been reset to default.',
-                });
-              }}
-              className="inline-flex items-center  lg:gap-2 gap-1 px-3 py-2 bg-white/80 hover:bg-white/90 rounded-md shadow-sm transition-colors text-red-600 hover:text-red-700"
-            >
-              <X className="w-4 h-4" />
-              <span className="text-sm lg:block hidden">Remove</span>
-            </button>
+            <AlertDialog open={bgDeleteOpen} onOpenChange={setBgDeleteOpen}>
+              <AlertDialogTrigger asChild>
+                <button
+                  type="button"
+                  className={`inline-flex items-center  lg:gap-2 gap-1 px-3 py-2 bg-white/80 hover:bg-white/90 rounded-md shadow-sm transition-colors text-red-600 hover:text-red-700 ${isRemovingBg ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  <X className="w-4 h-4" />
+                  <span className="text-sm lg:block hidden">Remove</span>
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Remove Background</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will permanently delete the background image from storage and remove it from the dashboard.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={isRemovingBg}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={isRemovingBg}
+                    onClick={async () => {
+                      if (!backgroundImage) return
+                      setIsRemovingBg(true)
+                      try {
+                        const res = await fetch('/api/admin/upload-logo', {
+                          method: 'DELETE',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ fileUrl: backgroundImage }),
+                        })
+                        const data = await res.json().catch(() => ({}))
+                        if (!res.ok || !data?.verified) {
+                          throw new Error(data?.error || 'Storage deletion failed')
+                        }
+                        setBackgroundImage(null)
+                        localStorage.removeItem('dashboardBackground')
+                        const fileInput = document.getElementById('background-upload') as HTMLInputElement
+                        if (fileInput) fileInput.value = ''
+                        setBgDeleteOpen(false)
+                        toast({
+                          title: 'Background Removed',
+                          description: 'Image deleted from storage and UI updated.',
+                        })
+                      } catch (error) {
+                        console.error('Background delete error:', error)
+                        toast({
+                          title: 'Delete Failed',
+                          description: 'Could not remove background from storage. No changes were made.',
+                          variant: 'destructive',
+                        })
+                      } finally {
+                        setIsRemovingBg(false)
+                      }
+                    }}
+                  >
+                    {isRemovingBg ? 'Removing…' : 'Delete'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
           <label htmlFor="background-upload" className="cursor-pointer inline-flex items-center gap-2 px-3 py-2 bg-white/80 hover:bg-white/90 rounded-md shadow-sm transition-colors">
             <Image className="w-4 h-4" />

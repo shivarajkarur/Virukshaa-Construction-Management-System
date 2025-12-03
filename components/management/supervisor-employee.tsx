@@ -78,6 +78,7 @@
     const [isShiftLoading, setIsShiftLoading] = useState<boolean>(false)
     // Attendance state scoped per project and employee, keyed by projectId_employeeId
     const [attendanceData, setAttendanceData] = useState<Record<string, { status: AttendanceStatus; checkIn?: string; checkOut?: string; present: boolean; projectId: string }>>({})
+    const [lockedShifts, setLockedShifts] = useState<Record<string, boolean>>({})
 
     // Persist selected project across refreshes
     useEffect(() => {
@@ -133,6 +134,15 @@
         }
 
         setShiftData(map)
+        if (selectedProject) {
+          setLockedShifts((prev) => {
+            const next = { ...prev }
+            Object.keys(map).forEach((eid) => {
+              next[`${selectedProject}_${eid}`] = true
+            })
+            return next
+          })
+        }
         // Persist per-project shift data to sessionStorage to avoid zeroes on refresh
         if (typeof window !== 'undefined' && selectedProject) {
           try {
@@ -422,6 +432,7 @@
     useEffect(() => {
       if (!selectedProject) {
         setShiftData({})
+        setLockedShifts({})
         return
       }
       // Rehydrate cached shift data for the selected project immediately
@@ -454,6 +465,12 @@
           return false
         }
 
+        const lockKey = `${selectedProject}_${employeeId}`
+        if (lockedShifts[lockKey]) {
+          toast.error("Shift already set for today")
+          return false
+        }
+
         const res = await fetch(`/api/employee-shifts`, {
           method: "PUT",
           headers: {
@@ -471,6 +488,7 @@
         const s = typeof (doc as any)?.shifts === "number" ? (doc as any).shifts : shifts
         const pay = typeof (doc as any)?.perShiftSalary === "number" ? (doc as any).perShiftSalary : perShiftSalary
         setShiftData((prev) => ({ ...prev, [employeeId]: { shifts: s, perShiftSalary: pay, totalPay: (doc as any)?.totalPay } }))
+        setLockedShifts((prev) => ({ ...prev, [lockKey]: true }))
         // Do not update employees[].shiftsWorked; display derives from shiftData per selected project
         toast.success("Shift updated successfully")
         return true
@@ -873,41 +891,150 @@
                       <div className="mt-4 pt-4 border-t border-border">
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <span className="text-sm font-medium">Shifts Today (0–3, 0.5-step)</span>
-                          <Select
-                            value={String(typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0)}
-                            onValueChange={(val) => {
-                              const num = Number.parseFloat(val)
-                              const clamped = Math.max(0, Math.min(3, Math.round((isNaN(num) ? 0 : num) * 2) / 2))
-                              const perShift =
+                          <Input
+                            id={`shift-count-${emp._id}`}
+                            list={`shift-options-${emp._id}`}
+                            type="number"
+                            inputMode="decimal"
+                            step={0.5}
+                            className="h-8 w-24 px-2 py-1"
+                            placeholder="Select or type a shift"
+                            required
+                            aria-label="Shift count"
+                            aria-describedby={`shift-help-${emp._id}`}
+                            title="Select or type a shift (0–3, 0.5 steps)"
+                            min={0}
+                            max={3}
+                            disabled={!!(selectedProject && lockedShifts[`${selectedProject}_${emp._id}`])}
+                            value={String(
+                              typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0
+                            )}
+                            onChange={(e) => {
+                              const raw = e.target.value.trim()
+                              const val = Number(raw)
+                              if (!Number.isFinite(val)) return
+                              setShiftData((prev) => {
+                                const perShift =
+                                  typeof emp.salary === "number"
+                                    ? emp.salary
+                                    : typeof prev[emp._id]?.perShiftSalary === "number"
+                                      ? prev[emp._id]!.perShiftSalary!
+                                      : 0
+                                return {
+                                  ...prev,
+                                  [emp._id]: {
+                                    shifts: val,
+                                    perShiftSalary: perShift,
+                                    totalPay: perShift * val,
+                                  },
+                                }
+                              })
+                            }}
+                            onKeyDown={async (e) => {
+                              if (e.key !== "Enter") return
+                              if (selectedProject && lockedShifts[`${selectedProject}_${emp._id}`]) return
+                              const target = e.currentTarget
+                              const raw = target.value.trim()
+                              const val = Number(raw)
+                              const prevVal =
+                                typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0
+                              const validHalfStep = Math.round(val * 2) === val * 2
+                              if (!Number.isFinite(val) || val < 0 || val > 3 || !validHalfStep) {
+                                toast.error("Please enter a valid shift value (0–3, in 0.5 steps).")
+                                target.setAttribute("aria-invalid", "true")
+                                target.value = String(prevVal)
+                                return
+                              }
+                              target.removeAttribute("aria-invalid")
+                              setShiftData((prev) => {
+                                const perShift =
+                                  typeof emp.salary === "number"
+                                    ? emp.salary
+                                    : typeof prev[emp._id]?.perShiftSalary === "number"
+                                      ? prev[emp._id]!.perShiftSalary!
+                                      : 0
+                                return {
+                                  ...prev,
+                                  [emp._id]: {
+                                    shifts: val,
+                                    perShiftSalary: perShift,
+                                    totalPay: perShift * val,
+                                  },
+                                }
+                              })
+                              const ok = await saveShift(
+                                emp._id,
+                                val,
                                 typeof emp.salary === "number"
                                   ? emp.salary
                                   : typeof shiftData[emp._id]?.perShiftSalary === "number"
                                     ? shiftData[emp._id]!.perShiftSalary!
                                     : 0
-                              setShiftData((prev) => ({
-                                ...prev,
-                                [emp._id]: {
-                                  shifts: clamped,
-                                  perShiftSalary: perShift,
-                                  totalPay: clamped * perShift,
-                                },
-                              }))
-                              saveShift(emp._id, clamped, perShift)
+                              )
+                              if (!ok) {
+                                toast.error("Shift Save Failed")
+                              } else {
+                                toast.success("Shift Saved")
+                              }
                             }}
-                          >
-                            <SelectTrigger className="h-8 w-24 px-2 py-1">
-                              <SelectValue placeholder="0" />
-                            </SelectTrigger>
-                            <SelectContent align="start">
-                              <SelectItem value="0">0</SelectItem>
-                              <SelectItem value="0.5">0.5</SelectItem>
-                              <SelectItem value="1">1</SelectItem>
-                              <SelectItem value="1.5">1.5</SelectItem>
-                              <SelectItem value="2">2</SelectItem>
-                              <SelectItem value="2.5">2.5</SelectItem>
-                              <SelectItem value="3">3</SelectItem>
-                            </SelectContent>
-                          </Select>
+                            onBlur={async (e) => {
+                              if (selectedProject && lockedShifts[`${selectedProject}_${emp._id}`]) return
+                              const target = e.currentTarget
+                              if (!target.value) return
+                              const raw = target.value.trim()
+                              const val = Number(raw)
+                              const prevVal =
+                                typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0
+                              const validHalfStep = Math.round(val * 2) === val * 2
+                              if (!Number.isFinite(val) || val < 0 || val > 3 || !validHalfStep) {
+                                toast.error("Please enter a valid shift value (0–3, in 0.5 steps).")
+                                target.setAttribute("aria-invalid", "true")
+                                target.value = String(prevVal)
+                                return
+                              }
+                              target.removeAttribute("aria-invalid")
+                              setShiftData((prev) => {
+                                const perShift =
+                                  typeof emp.salary === "number"
+                                    ? emp.salary
+                                    : typeof prev[emp._id]?.perShiftSalary === "number"
+                                      ? prev[emp._id]!.perShiftSalary!
+                                      : 0
+                                return {
+                                  ...prev,
+                                  [emp._id]: {
+                                    shifts: val,
+                                    perShiftSalary: perShift,
+                                    totalPay: perShift * val,
+                                  },
+                                }
+                              })
+                              const ok = await saveShift(
+                                emp._id,
+                                val,
+                                typeof emp.salary === "number"
+                                  ? emp.salary
+                                  : typeof shiftData[emp._id]?.perShiftSalary === "number"
+                                    ? shiftData[emp._id]!.perShiftSalary!
+                                    : 0
+                              )
+                              if (!ok) {
+                                toast.error("Shift Save Failed")
+                              } else {
+                                toast.success("Shift Saved")
+                              }
+                            }}
+                          />
+                          <datalist id={`shift-options-${emp._id}`}>
+                            <option value="1">1</option>
+                            <option value="1.5">1.5</option>
+                            <option value="2">2</option>
+                            <option value="2.5">2.5</option>
+                            <option value="3">3</option>
+                          </datalist>
+                          <div id={`shift-help-${emp._id}`} className="sr-only">
+                            Select or type a shift value between 0 and 3 in steps of 0.5. Press Enter to save.
+                          </div>
                         </div>
                         <div className="mt-2 text-xs text-muted-foreground">
                           {/* Per Shift: ₹{(typeof emp.salary === "number" ? emp.salary : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0)).toFixed(2)} • Today's Pay: ₹{(((typeof shiftData[emp._id]?.shifts === "number" ? shiftData[emp._id]!.shifts : 0) * (typeof emp.salary === "number" ? emp.salary : (typeof shiftData[emp._id]?.perShiftSalary === "number" ? shiftData[emp._id]!.perShiftSalary! : 0))) || 0).toFixed(2)} */}

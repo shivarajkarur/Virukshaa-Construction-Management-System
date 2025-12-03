@@ -3330,7 +3330,7 @@ export default function EmployeesManagement() {
                               <Clock className="w-4 h-4" /> Shifts Today
                             </div>
                             <div className="space-y-2">
-                              <Label htmlFor={`shift-count-${employee._id}`}>Shift *</Label>
+                              <Label htmlFor={`shift-count-${employee._id}`}></Label>
                               <Input
                                 id={`shift-count-${employee._id}`}
                                 list={`shift-options-${employee._id}`}

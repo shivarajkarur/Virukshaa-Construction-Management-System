@@ -1,111 +1,74 @@
-echo "# Virukshaa Construction Management System
+# Virukshaa Construction Management System
 
-A modern, full-stack construction management system built with Next.js, TypeScript, and Chakra UI. This application helps manage various aspects of construction projects including project tracking, resource management, and team collaboration.
+Comprehensive construction management platform with role-based dashboards for Admin, Supervisor, Client, and Supplier. It centralizes projects, employees, materials, reports, messaging, and payroll while ensuring data integrity and efficient storage management.
 
-## 🚀 Features
+## Features
+- Role-based dashboards and navigation
+- Projects, tasks, invoices, and materials management
+- Employees and supervisors management with daily shift tracking
+- Supervisor shift entry is locked per day after first save
+- Messaging between admin and clients, including attachments
+- Background image customization for dashboard with permanent storage deletion
+- Reports and payroll modules
 
-- **Project Management**: Track and manage construction projects from start to finish
-- **Supervisor Management**: Manage and assign supervisors to projects
-- **Resource Allocation**: Efficiently allocate and track construction resources
-- **Real-time Updates**: Stay up-to-date with project progress
-- **Responsive Design**: Works on desktop and mobile devices
-- **Secure Authentication**: Built-in user authentication and authorization
+## Tech Stack
+- Next.js App Router, React, TypeScript
+- UI: shadcn/ui components
+- Database: MongoDB + Mongoose
+- Storage: Cloudflare R2
+- Notifications: `sonner` and custom toasts
 
-## 🛠️ Tech Stack
+## Getting Started
+### Prerequisites
+- Node.js 18+
+- MongoDB instance
+- Cloudflare R2 bucket and API credentials
 
-- **Frontend**: Next.js 13+ with TypeScript
-- **UI Library**: Chakra UI with Radix UI primitives
-- **Styling**: Tailwind CSS
-- **State Management**: React Context API
-- **Form Handling**: React Hook Form with Zod validation
-- **Authentication**: Custom authentication system
-- **Database**: (To be specified based on your backend)
-- **Deployment**: Vercel (recommended)
-
-## 📦 Prerequisites
-
-- Node.js 16.8 or later
-- npm or pnpm (recommended)
-- (Add any other system requirements here)
-
-## 🚀 Getting Started
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/your-username/virukshaa-construction-management-system.git
-   cd virukshaa-construction-management-system
-   ```
-
-2. **Install dependencies**
-   ```bash
-   pnpm install
-   # or
-   npm install
-   ```
-
-3. **Set up environment variables**
-   Create a `.env.local` file in the root directory and add the required environment variables:
-   ```
-   # Example (update with your actual variables)
-   DATABASE_URL=your_database_url
-   NEXTAUTH_SECRET=your_nextauth_secret
-   NEXTAUTH_URL=http://localhost:3000
-   ```
-
-4. **Run the development server**
-   ```bash
-   pnpm dev
-   # or
-   npm run dev
-   ```
-
-5. **Open [http://localhost:3000](http://localhost:3000) in your browser**
-
-## 🏗️ Project Structure
-
+### Installation
 ```
-/
-├── app/                  # App router pages and layouts
-├── components/          # Reusable UI components
-├── contexts/            # React context providers
-├── hooks/               # Custom React hooks
-├── lib/                 # Utility functions and configurations
-├── models/              # Data models and types
-├── public/              # Static assets
-├── scripts/             # Utility scripts
-└── styles/              # Global styles
+npm install
 ```
 
-## 📝 Scripts
+### Environment Variables
+Create a `.env` file with the following variables:
+```
+MONGODB_URI="mongodb+srv://<user>:<password>@<cluster>/<db>?retryWrites=true&w=majority"
 
-- `pnpm dev` - Start development server
-- `pnpm build` - Build for production
-- `pnpm start` - Start production server
-- `pnpm lint` - Run ESLint
+CLOUDFLARE_R2_ENDPOINT="https://<account_id>.r2.cloudflarestorage.com"
+CLOUDFLARE_R2_ACCESS_KEY_ID="<access_key_id>"
+CLOUDFLARE_R2_SECRET_ACCESS_KEY="<secret_access_key>"
+CLOUDFLARE_R2_BUCKET_NAME="<bucket_name>"
+CLOUDFLARE_R2_PUBLIC_URL="https://<public_r2_domain>"
+```
 
-## 🤝 Contributing
+### Development
+```
+npm run dev
+```
 
-Contributions are welcome! Please follow these steps:
+### Build
+```
+npm run build
+```
 
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+## Key Workflows
+### Dashboard Background Deletion
+- Remove button triggers a confirmation dialog and calls `DELETE /api/admin/upload-logo` to permanently delete the background from Cloudflare R2.
+- UI updates only after backend verifies storage deletion to prevent orphaned files.
 
-## 📄 License
+### Client Message Cleanup
+- Admin can delete all messages for a client via the dialog action in the message view.
+- Calls `POST /api/messages/delete-all` with `{ conversationId }`.
+- Deletes attachments from storage first, then removes all related message documents in an atomic transaction.
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## API Endpoints
+- `POST /api/admin/upload-logo` — Upload dashboard assets
+- `DELETE /api/admin/upload-logo` — Permanently delete a dashboard asset (verifies removal)
+- `POST /api/messages/delete-all` — Delete all messages and attachments for a conversation
 
-## 🙏 Acknowledgments
+## Data Integrity & Storage
+- Storage deletions are verified and UI state only updates on success.
+- Message deletion is atomic at the database level; if any step fails, no changes are applied.
 
-- [Next.js](https://nextjs.org/)
-- [Chakra UI](https://chakra-ui.com/)
-- [Radix UI](https://www.radix-ui.com/)
-- [TypeScript](https://www.typescriptlang.org/)
-
----
-
-<div align="center">
-  Made with dezprox by [dinesh]
-</div>
+## Notes
+- If ESLint errors occur due to local configuration, build will still succeed. Adjust `.eslintrc.json` if needed.

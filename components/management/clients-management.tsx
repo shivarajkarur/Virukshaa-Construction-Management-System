@@ -240,6 +240,7 @@ export default function ClientsManagement() {
   // Message Dialog States
   const [messageDialogOpen, setMessageDialogOpen] = useState(false)
   const [messageClient, setMessageClient] = useState<Client | null>(null)
+  const [isDeletingAllMessages, setIsDeletingAllMessages] = useState(false)
 
   // Project Management States
   const [editingProject, setEditingProject] = useState<Project | null>(null)
@@ -1121,7 +1122,9 @@ export default function ClientsManagement() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete Client</AlertDialogTitle>
                     <AlertDialogDescription>
-                      Are you sure you want to delete {client.name}? This action cannot be undone.
+                      {/* Are you sure you want to delete {client.name}? This action cannot be undone.
+                      make sure the all project and invoice deleted related to this client. */}
+                      Before deleting {client.name}, please make sure all projects and invoices linked to this client are deleted
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -2444,13 +2447,60 @@ export default function ClientsManagement() {
               <DialogDescription>Chat with client</DialogDescription>
             </DialogHeader>
             {messageClient ? (
-              <MessageBox
-                userType="admin"
-                title={messageClient.name}
-                conversationId={messageClient._id}
-                onBack={() => setMessageDialogOpen(false)}
-                className="h-[70vh]"
-              />
+              <div className="relative">
+                <div className="absolute top-3 right-3 z-20">
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="destructive" size="sm" className="bg-red-600 hover:bg-red-700">
+                        Delete All Messages
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete all messages</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete all text messages and attachments for this client. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isDeletingAllMessages}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          disabled={isDeletingAllMessages}
+                          onClick={async () => {
+                            setIsDeletingAllMessages(true)
+                            try {
+                              const res = await fetch('/api/messages/delete-all', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ conversationId: messageClient._id })
+                              })
+                              const data = await res.json().catch(() => ({}))
+                              if (!res.ok || data?.success !== true) {
+                                throw new Error(data?.error || 'Deletion failed')
+                              }
+                              toast.success('All messages deleted successfully')
+                            } catch (err: any) {
+                              console.error('Delete all messages error:', err)
+                              toast.error(err?.message || 'Failed to delete messages')
+                            } finally {
+                              setIsDeletingAllMessages(false)
+                            }
+                          }}
+                        >
+                          {isDeletingAllMessages ? 'Deleting…' : 'Delete'}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+                <MessageBox
+                  userType="admin"
+                  title={messageClient.name}
+                  conversationId={messageClient._id}
+                  onBack={() => setMessageDialogOpen(false)}
+                  className="h-[70vh]"
+                />
+              </div>
             ) : (
               <div className="p-6">No client selected</div>
             )}
